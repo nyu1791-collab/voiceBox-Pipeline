@@ -10,6 +10,22 @@ on:
       source_urls:
         description: '指定する公開URL（任意・1行1件）。空欄はRSSと検索で収集'
         type: string
+      mode:
+        description: 'evidence_first は公式資料・期間選別→段落撮影→台本生成'
+        type: choice
+        options: [standard, evidence_first]
+        default: standard
+      official_hosts:
+        description: '公式ドメイン（完全一致、1行1件）。evidence_first で使用'
+        type: string
+        default: "openai.com\nanthropic.com\nwww.anthropic.com\nblog.google\napi-docs.deepseek.com\naws.amazon.com"
+      days:
+        description: 'evidence_first の過去何日を対象にするか（1〜30）'
+        type: number
+        default: 7
+      queries:
+        description: '短い検索語（任意、1行1件）。topicの説明文と検索語を分ける'
+        type: string
       provider:
         description: 'noneは情報収集とプロンプト保存だけ。API利用は明示選択'
         type: choice
@@ -54,6 +70,10 @@ jobs:
           PROVIDER: ${{ inputs.provider }}
           MODEL: ${{ inputs.model }}
           MINUTES: ${{ inputs.minutes }}
+          MODE: ${{ inputs.mode }}
+          OFFICIAL_HOSTS: ${{ inputs.official_hosts }}
+          DAYS: ${{ inputs.days }}
+          QUERIES: ${{ inputs.queries }}
           GEMINI_API_KEY: ${{ inputs.provider == 'gemini' && secrets.GEMINI_API_KEY || '' }}
           GROQ_API_KEY: ${{ inputs.provider == 'groq' && secrets.GROQ_API_KEY || '' }}
           OPENCODE_API_KEY: ${{ inputs.provider == 'opencode' && secrets.OPENCODE_API_KEY || '' }}
@@ -62,10 +82,19 @@ jobs:
           import json, os
           from pathlib import Path
           from tools.prepare_project import prepare
+          from tools.prepare_trending import prepare_trending
           request = {'topic': os.environ['TOPIC'], 'provider': os.environ['PROVIDER'],
                      'model': os.environ['MODEL'], 'minutes': float(os.environ['MINUTES']),
                      'urls': os.environ.get('SOURCE_URLS', '').splitlines()}
-          result = prepare(request, Path(os.environ['RUNNER_TEMP'])/'source-pack',
+          queries = os.environ.get('QUERIES', '').splitlines()
+          if queries:
+              request['queries'] = queries
+          runner = prepare
+          if os.environ.get('MODE') == 'evidence_first':
+              runner = prepare_trending
+              request.update(official_hosts=os.environ['OFFICIAL_HOSTS'].splitlines(),
+                             days=int(os.environ['DAYS']), max_sources=20)
+          result = runner(request, Path(os.environ['RUNNER_TEMP'])/'source-pack',
                            allow_api=request['provider'] != 'none')
           print(json.dumps(result, ensure_ascii=False))
           PY

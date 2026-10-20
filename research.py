@@ -2,10 +2,12 @@
 from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime, timezone
 from pathlib import Path
-from urllib.parse import urlsplit, quote, urlencode, parse_qs
+from urllib.parse import urlsplit, quote, urlencode, parse_qs, urljoin
+from html.parser import HTMLParser
 import hashlib
 import json
 import os
+import time
 import urllib.request
 
 
@@ -75,7 +77,9 @@ def collect_sources(request):
     # Explicit sources take precedence; mix discovery providers instead of letting RSS fill every slot.
     rows = list(sources.values())
     selected = [r for r in rows if r['origin'] == 'url']
-    buckets = [[r for r in rows if r['origin'] == kind] for kind in ('rss', 'search')]
+    buckets = [[r for r in rows if r['origin'] == kind and r['query'] == query]
+               for query in dict.fromkeys(r['query'] for r in rows if r['origin'] != 'url')
+               for kind in ('rss', 'search')]
     for i in range(max(map(len, buckets), default=0)):
         for bucket in buckets:
             if i < len(bucket):
@@ -88,6 +92,22 @@ def extract_source(source):
     source = dict(source)
     try:
         data, final_url = fetch(source['url'])
+        class Links(HTMLParser):
+            def __init__(self):
+                super().__init__()
+                self.urls = []
+                self.language = None
+
+            def handle_starttag(self, tag, attrs):
+                if tag == 'html':
+                    self.language = dict(attrs).get('lang', '').lower().split('-')[0] or None
+                if tag == 'a':
+                    href = dict(attrs).get('href', '')
+                    url = urljoin(final_url, href).split('#')[0]
+                    if href and urlsplit(url).scheme in ('http', 'https'):
+                        self.urls.append(url)
+        links = Links()
+        links.feed(data.decode('utf-8', errors='replace'))
         extracted = trafilatura.extract(data, output_format='json', include_comments=False,
                                         include_tables=True, with_metadata=True)
         article = json.loads(extracted) if extracted else {}
@@ -97,6 +117,8 @@ def extract_source(source):
         source.update(text=text[:18000], final_url=final_url, title=article.get('title') or source['title'],
             article_published=article.get('date'), author=article.get('author'), extraction_status='EXTRACTED',
             body_sha256=hashlib.sha256(text.encode()).hexdigest())
+        source['links'] = list(dict.fromkeys(links.urls))[:200]
+        source['language'] = article.get('language') or links.language
     except Exception as error:
         source.update(text='', extraction_status='FAILED', error=type(error).__name__)
     source['retrieved_utc'] = datetime.now(timezone.utc).isoformat()
@@ -106,11 +128,15 @@ def extract_source(source):
 def research(request):
     if not isinstance(request.get('topic'), str) or not request['topic'].strip():
         raise ValueError('topic is required')
+    started = time.monotonic()
     sources, errors = collect_sources(request)
+    discovered = time.monotonic()
     with ThreadPoolExecutor(max_workers=4) as pool:
         sources = list(pool.map(extract_source, sources))
     return {'topic': request['topic'], 'created_utc': datetime.now(timezone.utc).isoformat(),
-            'sources': sources, 'errors': errors}
+            'sources': sources, 'errors': errors,
+            'timing_seconds': {'discovery': round(discovered-started, 6),
+                               'body_extraction': round(time.monotonic()-discovered, 6)}}
 
 
 def script_prompt(pack, minutes=10):
