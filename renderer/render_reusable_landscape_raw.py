@@ -15,6 +15,7 @@ from media_editing import VideoPanels
 from evidence_translation import TranslationCards
 from subtitle_tools import wrap_japanese, phrase_breaks
 from motion_diagrams import bound_timeline, active_diagram, cache_state as motion_cache_state, render_panel as render_motion_panel
+from production_cues import draw_direction, cache_state as direction_cache_state
 import argparse, hashlib, json, math, re, signal, wave, time
 from collections import OrderedDict
 from functools import lru_cache  # 字幕の折り返しの結果の再利用（フォントは共有しない）
@@ -645,6 +646,7 @@ def render(args):
     layers=build_visual_layers(profile,presentation,args.presentation,args.font) if layered else None
     motion_timeline=verified_motion_timeline or {}
     chapter_cards=presentation.get("chapter_cards") or []
+    production_cues=presentation.get('production_cues') or {}
     card_cfg=profile.get("chapter_card") or {}
     for r in records:
         if r["speaker"] not in variants: raise ValueError("unsupported speaker")
@@ -783,6 +785,7 @@ def render(args):
             translation_state = translation_cards.state(current_visual, t-r["start"] if r else 0, r["end"]-r["start"] if r else 1)
             frame_key=(translation_state,beat_key,speaker,expression,mouth,caption,tuple((x[0],x[2],x[3],x[4]) for x in char_states),bump,sb_scene,sb_pose)
             frame_key += (motion_cache_state(motion_timeline,t+args.start,FPS),)
+            frame_key += (direction_cache_state(production_cues,t+args.start),)
             if current_visual in video_panels.paths:
                 frame_key += (i,)
             cached=frame_cache.get(frame_key)
@@ -810,11 +813,12 @@ def render(args):
                 frame=backgrounds[beat_key].copy(); d=ImageDraw.Draw(frame)
             translation_cards.draw(frame, translation_state)
             motion = active_diagram(motion_timeline,t+args.start)
-            if motion is not None and MOTION_TEXT_IN_VISUAL_SLOT:  # R69：図解の文字は枠に載せない
-                ex1,ey1,ex2,ey2=layout['zones']['evidence']
+            if motion is not None and presentation.get('motion_in_visual_slot', MOTION_TEXT_IN_VISUAL_SLOT):
+                ex1,ey1,ex2,ey2=presentation.get('motion_region', layout['zones']['evidence'])
                 panel=render_motion_panel(motion,t+args.start,(ex2-ex1,ey2-ey1),args.font,
                                           int(perf_cfg.get('diagram_supersample',4)))
                 frame.paste(panel,(ex1,ey1)); d=ImageDraw.Draw(frame)
+            draw_direction(frame,production_cues,t+args.start,args.font)
             if sb_scene is not None:
                 sb_img,sb_xy=sidebar_state(sb_scene,sb_pose); frame.paste(sb_img,sb_xy,sb_img); sidebar_seen.add(sb_scene)
             for name,side,active,state,expr in char_states:

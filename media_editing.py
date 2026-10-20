@@ -183,11 +183,26 @@ def sound_effects(project, records):
     result = []
     previous_visual = None
     transition = project.get('audio', {}).get('transition_se')
+    chapter_cue = project.get('audio', {}).get('chapter_se')
+    previous_section = None
+    last_transition = -math.inf
+    gap = float(project.get('audio', {}).get('transition_min_gap', 0))
+    if not math.isfinite(gap) or gap < 0:
+        raise ValueError('transition_min_gap must be finite and nonnegative')
     for row, timing in zip(project['lines'], records):
         cues = [row['se']] if row.get('se') else []
-        if transition and previous_visual is not None and row['visual'] != previous_visual:
+        section = row.get('section', 'main')
+        chapter_changed = (chapter_cue and previous_section is not None and section != previous_section
+                           and section not in ('intro', 'closing'))
+        if chapter_changed:
+            cues.append(chapter_cue)
+            last_transition = timing['start']
+        elif (transition and previous_visual is not None and row['visual'] != previous_visual
+              and timing['start']-last_transition >= gap):
             cues.append(transition)
+            last_transition = timing['start']
         previous_visual = row['visual']
+        previous_section = section
         for cue in cues:
             cue = {'file': cue} if isinstance(cue, str) else dict(cue)
             offset = float(cue.pop('offset', 0))

@@ -166,6 +166,7 @@ def prepare_trending(request, output, *, allow_api=False, executable_path=None):
             item['visual'] = {'id': item['id'], 'file': 'materials/'+crop['file'],
                 'source_url': item['source_url'], 'source_credit': source['title'],
                 'captured_utc': captured['captured_utc'], 'sha256': crop['sha256'],
+                'evidence_text': item['text'], 'source_id': source['id'],
                 'source_language': 'en' if source.get('language') == 'en' else None}
             usable.append(item)
         atomic_json(output/'evidence.json', usable)
@@ -183,6 +184,22 @@ def prepare_trending(request, output, *, allow_api=False, executable_path=None):
             '台詞の主張は指定された撮影済み段落だけで裏付ける。情報が足りなければ短くする。'
             'translationsオブジェクトに使用したevidence_idごとの撮影段落全文の忠実な日本語訳を返す。'
             '日本語段落は原文を保持する。ずんだもんは「なのだ」、四国めたんは「よ・わ」の口調。')
+        prompt['system'] += (' chaptersに2〜5章を定義する（短い台本なら1章でも可）。'
+            '形式は[{"id":"chapter1","title":"短い章名","summary":"この章で分かること"}]。'
+            'titleは14文字以内、summaryは24文字以内。各台詞のsectionは章idまたはintro/closing。'
+            '冒頭はめたんが各章の要点を短く案内し、その台詞にdisplay:"overview"を付ける。'
+            '各章の冒頭で「第何章か」とテーマを自然に伝える。'
+            'めたんの解説は意味のまとまりを保ち、ずんだもんは適切な節目で質問する。')
+        prompt['system'] += (' 図表が理解に役立つ章では任意のexplainersを付けられる。'
+            '形式:[{"id":"diagram1","scene_id":"chapter1","title":"短い題名",'
+            '"template":"rows","elements":[{"id":"item1","line_id":台詞ID,"label":"台詞の連続した一部分"},'
+            '{"id":"item2","line_id":次の解説台詞ID,"label":"その台詞の一部分"}]}]。'
+            '各図はめたんの解説台詞2〜3個に結び、labelは30文字以内。根拠はその台詞の撮影段落。'
+            'templateはrows（項目表）、steps（手順）、bars（比較）。stepsはrelation:"sequence"も指定。'
+            'barsはmetricを共通指標名とし、各elementにvalue、unit、value_quoteを追加する。'
+            'value_quoteは指標名・数値・単位が含まれる撮影段落の原文そのもの。'
+            '異なる単位や異なる測定条件を同一グラフで比較しない。数値の根拠がなければrowsにする。'
+            '図表不要ならexplainers:[]。説明のための架空の数値を作らない。')
         data = json.loads(prompt['user'])
         data.update(date_window=pack['date_window'], evidence=[{k: v for k, v in e.items() if k != 'visual'} for e in usable])
         prompt['user'] = json.dumps(data, ensure_ascii=False)

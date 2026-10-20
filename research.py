@@ -152,7 +152,10 @@ def script_prompt(pack, minutes=10):
         '形式: {"title":"タイトル","lines":[{"id":1,"speaker":"ずんだもん",'
         '"emotion":"NORMAL","text":"台詞","source_id":"資料ID","se":null}]}。'
         'speakerはずんだもん/四国めたん。emotionはNORMAL/HAPPY/SERIOUS/SURPRISED/TROUBLED/SKEPTICAL。'
-        '全台詞に資料IDを指定する。SEはnull。両者の会話で説明し、同じ説明や無音で水増ししない。',
+        '全台詞に資料IDを指定する。SEはnull。ずんだもんは視聴者役として質問・疑問・短い反応を担当し、'
+        '四国めたんが解説する。毎台詞交互にせず、めたんは必要なら2〜4台詞続けて一つの説明を完結する。'
+        '説明を二人に一文ずつ分配しない。ずんだもんの質問の直後にずんだもん自身が答えない。'
+        '同じ説明や無音で水増ししない。',
         'user': json.dumps({'topic': pack['topic'], 'target_minutes': minutes,
                  'target_japanese_characters': round(minutes * 420), 'sources': sources}, ensure_ascii=False)}
 

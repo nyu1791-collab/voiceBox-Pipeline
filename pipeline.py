@@ -103,6 +103,8 @@ def setup(args):
 
 def load_project(path):
     project = read_json(path)
+    from renderer.production_cues import validate_direction
+    validate_direction(project)
     if not isinstance(project.get("title"), str) or not project["title"].strip():
         raise ValueError("title is required")
     thumbnail_title = project.get('thumbnail_title', project['title'])
@@ -142,6 +144,9 @@ def load_project(path):
         if row["visual"] not in visual_ids:
             raise ValueError(f"Unknown visual in line {row['id']}")
     audio = project.get("audio", {})
+    if not isinstance(audio.get('credits', []), list) or any(
+            not isinstance(credit, str) for credit in audio.get('credits', [])):
+        raise ValueError('audio.credits must be a list of credit strings')
     if audio.get("bgm"):
         audio["bgm"] = str((path.parent / audio["bgm"]).resolve())
         if not Path(audio["bgm"]).is_file():
@@ -159,6 +164,10 @@ def load_project(path):
             row['se'] = resolve_cue(row['se'])
     if audio.get('transition_se'):
         audio['transition_se'] = resolve_cue(audio['transition_se'])
+    if audio.get('chapter_se'):
+        audio['chapter_se'] = resolve_cue(audio['chapter_se'])
+    from renderer.production_cues import attach_motion
+    attach_motion(project, None, {}, None)
     return project
 
 
@@ -249,6 +258,7 @@ def prepare_audio(project, runtime, out, engine_sha):
             records.append({"id": row["id"], "speaker": row["speaker"],
                 "voicevox_speaker_id": SPEAKERS[row["speaker"]], "caption_text": row["text"],
                 "emotion": row["emotion"], "visual_id": row["visual"], "scene_id": row.get("section", "main"),
+                "voice_text": row["text"],
                 "caption_emphasis_terms": row.get('caption_emphasis_terms', []),
                 "start": frame_position / 48000, "end": (frame_position + frames) / 48000,
                 "audio_sha256": sha256(directory / "voice.wav"), "cache": str(directory)})
@@ -278,7 +288,18 @@ def render(project, runtime, out, records):
     presentation = {"title": project["title"], "voice_credit": "VOICEVOX:ずんだもん・四国めたん",
         "source_credit": " / ".join(dict.fromkeys(v["source_credit"] for v in visuals)),
         "source_url": visuals[0]["source_url"], "visuals": visuals, "sections": sections}
+    from renderer.production_cues import compile_direction, attach_motion, draw_direction
+    presentation['production_cues'] = compile_direction(project, records)
+    attach_motion(project, records, presentation, out)
+    # Reject unreadable overview rows before starting the video encoder.
+    from PIL import Image
+    for window in presentation['production_cues']['overview']:
+        draw_direction(Image.new('RGB', (1280, 720)), presentation['production_cues'],
+                       window['start'], runtime['font'])
     atomic_json(out / "presentation.json", presentation)
+    (out/'chapters.txt').write_text('\n'.join(
+        f"{int(c['start'])//60:02d}:{int(c['start'])%60:02d} 第{c['index']}章 {c['title']}"
+        for c in presentation['production_cues']['chapters'])+'\n')
     env = dict(os.environ, VIDEO_REVIEW_MODE="batch", DIRECT_ENCODE="1", OUT_CRF="20",
                OUT_VF=f"scale={output_width}:{output_height}:flags=lanczos", OUT_PRESET="veryfast", DIRECT_THREADS="4",
                CUDA_VISIBLE_DEVICES="-1")
@@ -328,6 +349,8 @@ def execute(args):
     asset_files += [r['se']['file'] for r in project['lines'] if r.get('se')]
     if project.get('audio', {}).get('transition_se'):
         asset_files.append(project['audio']['transition_se']['file'])
+    if project.get('audio', {}).get('chapter_se'):
+        asset_files.append(project['audio']['chapter_se']['file'])
     input_key = json_digest({"project": project, "assets": {p: sha256(p) for p in asset_files},
         "font": sha256(runtime["font"]), "background": sha256(runtime["background"]),
         "engine": engine_sha, "shell": shell_sha, "implementation": implementation})
@@ -355,6 +378,12 @@ def execute(args):
             (out / "script.txt").write_text("\n".join(f"{r['speaker']}：{r['text']}" for r in project["lines"]) + "\n")
             (out / "description.txt").write_text(project["title"] + "\n\nVOICEVOX:ずんだもん\nVOICEVOX:四国めたん\n\n" +
                 "\n".join(f"{v.get('source_credit', '利用者提供素材')} {v.get('source_url', '')}" for v in project["visuals"]) + "\n")
+            with (out/'description.txt').open('a') as description:
+                chapters = (out/'chapters.txt').read_text().strip()
+                if chapters:
+                    description.write('\n章立て\n'+chapters+'\n')
+                for credit in project.get('audio', {}).get('credits', []):
+                    description.write('\n'+str(credit)+'\n')
             state.update(status="COMPLETE", video=str(out / "video.mp4"), video_sha256=sha256(out / "video.mp4"),
                 bytes=(out / "video.mp4").stat().st_size, duration=float(probe["format"]["duration"]),
                 total_seconds=round(time.monotonic() - started, 3), render_seconds=render_seconds,
