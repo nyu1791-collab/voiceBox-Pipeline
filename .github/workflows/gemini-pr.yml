@@ -1,0 +1,53 @@
+name: Gemini assisted pull request
+
+on:
+  workflow_dispatch:
+    inputs:
+      request:
+        description: "Geminiへの変更依頼（最大5000文字。結果はレビュー用PRになります）"
+        required: true
+        type: string
+
+permissions:
+  contents: read
+
+jobs:
+  propose:
+    if: github.ref == 'refs/heads/main'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    permissions:
+      contents: write
+      pull-requests: write
+    steps:
+      - name: Check out main
+        uses: actions/checkout@v4
+        with:
+          ref: main
+
+      - name: Ask Gemini for a proposed patch
+        env:
+          GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
+          GEMINI_REQUEST: ${{ inputs.request }}
+          GITHUB_RUN_ID: ${{ github.run_id }}
+          RUNNER_TEMP: ${{ runner.temp }}
+        run: python3 tools/gemini_pr.py
+
+      - name: Push proposal branch
+        env:
+          GEMINI_BRANCH: gemini/proposal-${{ github.run_id }}
+        run: |
+          set -euo pipefail
+          git switch -c "$GEMINI_BRANCH"
+          git push origin "$GEMINI_BRANCH"
+
+      - name: Open draft pull request for review
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GEMINI_BRANCH: gemini/proposal-${{ github.run_id }}
+          GEMINI_TITLE: Gemini assisted proposal #${{ github.run_id }}
+          PR_BODY_FILE: ${{ runner.temp }}/gemini-pr-body.md
+        run: |
+          set -euo pipefail
+          gh pr create --draft --repo "$GITHUB_REPOSITORY" --base main --head "$GEMINI_BRANCH" \
+            --title "$GEMINI_TITLE" --body-file "$PR_BODY_FILE"
