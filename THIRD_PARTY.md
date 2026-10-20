@@ -1,5 +1,7 @@
 # 利用する既存ツールと素材
 
+- [AgentRouter](https://agentrouter.org/)：利用者が指定した外部APIルーター。対応する公式OpenCode CLI `opencode-ai@1.19.0` をコーディング接続確認に使う。独立した `AGENTROUTER_API_KEY` を使用し、無料・無制限や実請求0を保証しない。[接続手順](docs/AGENTROUTER_GITHUB.md)を参照。
+
 - [VOICEVOX Engine](https://github.com/VOICEVOX/voicevox_engine)：既存0.25.2 CPU版。エンジンと音声ライブラリの利用条件は公式配布物を参照。`tools/install_voicevox.py`が公式CPUリリースを取得し、GitHub公開SHA-256で照合する。エンジン本体をGitへ保存・再配布しない。
 - [FFmpeg](https://github.com/FFmpeg/FFmpeg)：映像符号化・音声速度調整・音声結合。VMまたはGitHubランナーのコマンドを使う。BGMダッキングと任意の音量正規化も担当する。
 - [Pillow](https://github.com/python-pillow/Pillow)：既存描画器の画像合成。
