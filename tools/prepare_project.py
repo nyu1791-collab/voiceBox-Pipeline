@@ -36,9 +36,13 @@ def prepare(request, output, script=None, *, allow_api=False, executable_path=No
     project = normalize_script(script, pack)
     selected_ids = {row['source_id'] for row in project['lines']}
     selected = [s for s in pack['sources'] if s['id'] in selected_ids]
-    targets = [{'id': s['id'], 'url': s.get('final_url', s['url']), 'viewport_only': True,
-                'region_selector': request.get('capture_selector', 'article, main, [role="main"], body')}
-               for s in selected]
+    targets = []
+    for source in selected:
+        override = request.get('capture_overrides', {}).get(source['id'], {})
+        targets.append({'id': source['id'], 'url': source.get('final_url', source['url']),
+            'viewport_only': True, 'article_region': True,
+            'region_selector': override.get('selector', request.get('capture_selector')),
+            'heading': override.get('heading'), 'crops': override.get('crops', [])})
     captures = asyncio.run(capture_targets(targets, output / 'materials', executable_path=executable_path,
                                           max_workers=4, retry_delays=()))
     by_id = {c['id']: c for c in captures}
@@ -46,8 +50,10 @@ def prepare(request, output, script=None, *, allow_api=False, executable_path=No
     failures = []
     for source in selected:
         capture = by_id[source['id']]
-        crop = next((c for c in capture.get('crops', []) if c.get('found')), None)
-        if capture.get('error') or not crop:
+        requested = [c for c in capture.get('crops', []) if c['name'] != 'article']
+        crop = next((c for c in requested if c.get('found')), None) or next(
+            (c for c in capture.get('crops', []) if c.get('found')), None)
+        if capture.get('error') or not crop or any(not c.get('found') for c in requested):
             failures.append(source['id'])
             continue
         visuals.append({'id': source['id'], 'file': 'materials/' + crop['file'],

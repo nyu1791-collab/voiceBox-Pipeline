@@ -12,6 +12,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 from contextlib import closing
 from media_editing import VideoPanels
+from subtitle_tools import wrap_japanese, phrase_breaks
 from motion_diagrams import bound_timeline, active_diagram, cache_state as motion_cache_state, render_panel as render_motion_panel
 import argparse, hashlib, json, math, re, signal, wave, time
 from collections import OrderedDict
@@ -91,25 +92,8 @@ def _break_ok(prev, nxt):
     if kp in "kaK" and kn in "kaK" and not (kp == "K" and kn == "K"): return True
     return False
 def wrap_words(text, font, width, strict=False):
-    """字幕の折り返し：切ってよい場所（_break_ok）でだけ折る。strict で切れる場所がなければ None を返す。"""
-    queue=re.findall(r"[A-Za-z0-9]+(?:[._:/+-][A-Za-z0-9]+)*|[ァ-ヶー]+|.", str(text))
-    lines=[]; cur=[]
-    while queue:
-        tok=queue.pop(0)
-        if not cur or tok in CLOSE_PUNCT or font.getlength("".join(cur)+tok)<=width:
-            cur.append(tok); continue
-        cut=None
-        for i in range(len(cur)-1,0,-1):
-            if _break_ok(cur[i-1][-1], cur[i][0]): cut=i; break
-        if cut is None and _break_ok(cur[-1][-1], tok[0]): cut=len(cur)
-        if cut is None:
-            if strict: return None
-            cut=len(cur)
-        lines.append("".join(cur[:cut]))
-        queue=cur[cut:]+[tok]+queue
-        cur=[]
-    if cur: lines.append("".join(cur))
-    return lines
+    """BudouXの文節境界で折り返し、数値・単位・英字語を保持する。"""
+    return wrap_japanese(text, font, width, strict=strict)
 
 
 @lru_cache(maxsize=64)
@@ -163,7 +147,7 @@ def _caption_states(text, font_path, size, width, max_lines, available, gap, emp
             return False
 
     result = []
-    for clause in (x for x in re.split(r"(?<=[。！？])", text) if x):
+    for clause in re.findall(r'.+?(?:[。！？]+[」』）】]*|$)', text, flags=re.S):
         remaining = clause
         while not fits(remaining):
             protected = set()
@@ -174,8 +158,8 @@ def _caption_states(text, font_path, size, width, max_lines, available, gap, emp
                 while offset >= 0:
                     protected.update(range(offset + 1, offset + len(term)))
                     offset = remaining.find(term, offset + 1)
-            breaks = [i for i in range(1, len(remaining)) if i not in protected
-                      and _break_ok(remaining[i-1], remaining[i]) and fits(remaining[:i])]
+            breaks = [i for i in phrase_breaks(remaining, tuple(emphasis)) if i not in protected
+                      and fits(remaining[:i])]
             if not breaks:
                 raise ValueError("36pxで字幕を安全に分割できない。台詞計画を確認する")
             cut = breaks[-1]

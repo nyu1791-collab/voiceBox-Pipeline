@@ -18,3 +18,14 @@
 - [Trafilatura](https://github.com/adbar/trafilatura)：2.3.1、Apache-2.0。記事本文とメタデータの抽出。抽出結果を自動的な事実確認と扱わない。
 - [Playwright](https://github.com/microsoft/playwright-python)：1.64.0、Apache-2.0。ヘッドレスChromiumで参照先を並列撮影。既存の `renderer/material_capture.py` を再利用し、Chrome固定パスを取り除いた。
 - 任意のGemini/Groq呼出しは各サービスのAPI条件に従う。無料枠・速度・Actions全体の無期限無料を保証しない。新規契約・キー作成・自動課金切替は実装しない。
+
+## 今回比較した追加ツール
+
+| GitHub | 採用判断・接続先 |
+|---|---|
+| [Google BudouX](https://github.com/google/budoux) | **採用**。0.9.0、Apache-2.0。CPUの同梱モデルで日本語文節を分け、`subtitle_tools.py`から映像字幕の折返し・時間分割へ接続。外部APIやモデルの追加取得なし。Python 3.10以降を維持するため、3.11以上が必要な0.10.0は使わない。 |
+| [pysubs2](https://github.com/tkarabela/pysubs2) | **採用**。1.8.1、MIT。実音声区間と映像の字幕状態を編集用SRT/ASS/VTTへ出力。Python 3.12以上が必要な1.9.0を避け、Actionsの3.11とローカル3.10以降に合わせる。 |
+| [ffmpeg-normalize](https://github.com/slhck/ffmpeg-normalize) | 調査済み・標準依存へ追加しない。ライセンス本文はMIT相当。現在のFFmpegに音量調整とloudnormがあり、同じ処理の重複導入を避ける。2パス正規化が必要な場合の候補。 |
+| [PySceneDetect](https://github.com/Breakthrough/PySceneDetect) | 調査済み・標準依存へ追加しない。BSD-3-Clause。提供映像の場面検出には有用だが、OpenCVなどの追加依存が必要。クリップの自動場面分割が必要な時に選択する。 |
+
+「採用」は制作コードへ接続したもの。「調査済み」は導入・実行済みを意味しない。追加ツールを理由にGPUや有料生成へ移行しない。

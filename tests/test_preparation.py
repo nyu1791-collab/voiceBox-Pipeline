@@ -26,8 +26,10 @@ def source_site(tmp_path):
     site.mkdir()
     paragraph = 'A CPU processes instructions and a voice engine creates a waveform from text. The audio duration determines when a subtitle appears. Sources are saved with their retrieval time and are kept separate from narration. '
     (site / 'article.html').write_text('<html><head><title>CPU voice article</title></head><body style="margin:0;background:#182820">'
-        '<nav style="height:80px;color:white">navigation</nav><article style="background:#fff4d0;margin:20px;padding:20px">'
-        '<h1>CPU voice article</h1>' + ''.join('<p>'+paragraph+'</p>' for _ in range(8)) + '</article></body></html>')
+        '<nav style="height:80px;color:white">navigation</nav>'
+        '<aside><article style="background:red">An unrelated related-article card</article></aside>'
+        '<main style="background:#fff4d0;margin:20px;padding:20px">'
+        '<h1>CPU voice article</h1>' + ''.join('<p>'+paragraph+'</p>' for _ in range(8)) + '</main></body></html>')
     server = ThreadingHTTPServer(('127.0.0.1', 0), partial(QuietHandler, directory=str(site)))
     address = f'http://127.0.0.1:{server.server_port}'
     (site / 'feed.xml').write_text(f'<rss version="2.0"><channel><title>Test feed</title><link>{address}</link><description>fixture</description>'
@@ -71,6 +73,27 @@ def test_inaccessible_source_never_becomes_a_visual(source_site, tmp_path):
     source = json.loads((output / 'research.json').read_text())['sources'][0]
     assert source['extraction_status'] == 'FAILED'
     assert not (output / 'project.json').exists()
+
+
+@pytest.mark.parametrize('text, succeeds', [('waveform', True), ('missing-article-claim', False)])
+def test_explicit_paragraph_is_used_or_reported_missing(source_site, tmp_path, text, succeeds):
+    url = source_site + '/article.html'
+    sid = source_id(url)
+    request = {'topic': 'CPU音声', 'urls': [url], 'news': False, 'search': False,
+               'capture_overrides': {sid: {'heading': 'CPU voice article',
+                   'crops': [{'name': 'claim', 'text': text}]}}}
+    script = [{'speaker': 'zundamon', 'text': '音声を作るのだ。', 'source_id': sid},
+              {'speaker': 'metan', 'text': '波形に変換するわ。', 'source_id': sid}]
+    output = tmp_path/'paragraph'
+    if succeeds:
+        prepare(request, output, script, executable_path=shutil.which('chromium'))
+        project = json.loads((output/'project.json').read_text())
+        assert project['visuals'][0]['file'].endswith('_claim.png')
+    else:
+        with pytest.raises(RuntimeError, match='capture failed'):
+            prepare(request, output, script, executable_path=shutil.which('chromium'))
+        assert json.loads((output/'preparation.json').read_text())['status'] == 'FAILED'
+        assert not (output/'project.json').exists()
 
 
 def test_api_is_explicit_and_unknown_source_is_rejected(monkeypatch):

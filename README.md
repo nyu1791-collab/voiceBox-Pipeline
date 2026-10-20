@@ -52,6 +52,8 @@ materials/   # 指定画像・SVG・動画・任意BGM
 - **FFmpeg**：`audio: {"bgm":"materials/music.wav","bgm_gain_db":-24,"ducking":true}` で、声が出る時にBGMを下げて合成。`normalize:true` を追加すると−17LUFSを狙う正規化を有効化する。BGMは提供素材だけを使い、自動取得しない。
 - **効果音**：台詞に `se: {"file":"materials/pop.wav","offset":0,"gain_db":-18,"duration":0.4}` を指定。`offset` は実音声の台詞開始からの秒数。`audio.transition_se` に同じ形式を指定すると資料が切り替わる台詞の開始へ自動配置。`audio.se: {"pop":"materials/pop.wav"}` の登録があれば台詞を `se:"pop"` と短く書ける。SEは提供素材のみ。映像は再符号化せず、声・BGM・SEを音声側で合成し、配置記録を `sound-effects.json` に残す。
 - **サムネイル**：完成映像の実フレームにタイトルを重ね、1280×720の `thumbnail.png` を出力。`thumbnail_title` で短いタイトルを指定できる。キャラクターの代替画像を生成しない。
+- **BudouX 0.9.0**：日本語字幕の文節に合わせて改行。英字語・数値と単位・禁則を保護し、36px・最大3行を維持。長文は縮小せず時間分割する。
+- **pysubs2 1.8.1**：productionで `subtitles.srt`・`subtitles.ass`・`subtitles.vtt` と、本文・時刻を保持する `subtitles.json` を出力。映像と同じ字幕区間を使う。台詞内の時刻配分は文字数比で、単語単位の同期ではない。ASSは追加編集用であり、元の黒板・字幕板・立ち絵の全レイアウトを再現しない。
 
 画像・動画・BGMの相対パスは台本JSONのフォルダが基準。`visuals` の各項目に `id`、出典情報 `source_credit/source_url` を付けます。画像の代わりに `clips` を指定する場合は `file` を省略できます。
 
@@ -97,10 +99,12 @@ GeminiまたはGroqで台本も生成する場合は、providerと具体的なmo
 
 提供台本は既存の `title/lines` 形式に加え、画像のような配列形式も受け付けます。`speaker:zundamon/metan` と小文字の `emotion` を正規形式へ変換し、台詞本文は保持。各台詞の `source_id` を `research.json` の資料IDへ結びます。`search_keyword` は同じ検索語の取得済み記事へ対応付けできます。検索語だけで未取得の画面を作ることはありません。
 
-台本がある場合、Playwright Chromiumが参照する記事だけを最大4並列で撮影。既存Cookieは使わず、広告や本文を勝手に書き換えません。本文領域を高さ700px以内で切り出し、URL・撮影時刻・SHA付きで `materials/manifest.json` へ記録。撮影失敗は記録して停止し、別画像へ置換しません。`capture_selector` で記事領域のCSSセレクターを指定できます。10サイトが何秒で完了するかは接続先次第です。
+台本がある場合、Playwright Chromiumが参照する記事だけを最大4並列で撮影。既存Cookieは使わず、広告や本文を勝手に書き換えません。本文見出しと文章を持つ領域を選び、高さ700px以内で切り出し、URL・撮影時刻・SHA付きで `materials/manifest.json` へ記録。関連記事の先頭カードを自動的に本文と決めつけません。撮影失敗は記録して停止し、別画像へ置換しません。全体の `capture_selector`、または `capture_overrides: {"資料ID":{"selector":".article-body","heading":"本文見出し","crops":[{"name":"claim","text":"切り抜く段落の一部"}]}}` で指定できます。指定段落があればその切り抜きを資料として優先し、見つからない場合は停止します。10サイトが何秒で完了するかは接続先次第です。
 
 生成した `project.json` と `materials/` に正規立ち絵・背景・`runtime-assets.json` を合わせて入力ZIPにすれば、そのままproductionへ渡せます。また、production ZIPの `project.json` を `research-request.json` に置き換え、provider/modelを指定し、起動時の `allow_script_api` を有効にすると、記事収集→JSON台本→撮影→CPU音声→動画まで同じランナーで続行します。台本APIのSecretがない場合は自動生成できません。目標分数は台本作成の目安で、最終実尺は音声生成後のmetricsで示します。
 
 `RESEARCH_READY` は情報収集済み、`PROJECT_READY` は台本と撮影素材の準備済み。MP4完成とは区別します。これらのAPIによる新規台本生成・任意ニュース全体の正確性まで、ローカルの結合テストが保証するものではありません。YouTubeへの自動投稿は含めません。
+
+見直した5工程と実装の境界は [必読ルール](docs/RULES.md#全体を把握する) に記載。現行のresearch-request制作は調査→台本→撮影→音声→描画の順。テーマだけで起動する統一入口、音声と撮影の並列化、共通素材の独立登録、完成MP4のDrive自動転送は未接続です。Google Newsの集約URLから配信元の記事を解決する処理も未実装で、本文未取得を取得成功に数えません。
 
 必読は [docs/RULES.md](docs/RULES.md) だけ。ツールの由来と条件は [THIRD_PARTY.md](THIRD_PARTY.md)。過去のVM動作記録は [docs/RUN_RESULT.md](docs/RUN_RESULT.md) です。

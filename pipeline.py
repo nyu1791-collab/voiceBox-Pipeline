@@ -20,6 +20,7 @@ import wave
 
 from engine_pool import EnginePool, WORKERS, engine_fingerprint
 from media_editing import prepare_visual, mux_audio, sound_effects, make_thumbnail
+from subtitle_tools import write_subtitles
 
 ROOT = Path(__file__).resolve().parent
 SPEAKERS = {"ずんだもん": 3, "四国めたん": 2}
@@ -245,6 +246,7 @@ def prepare_audio(project, runtime, out, engine_sha):
             records.append({"id": row["id"], "speaker": row["speaker"],
                 "voicevox_speaker_id": SPEAKERS[row["speaker"]], "caption_text": row["text"],
                 "emotion": row["emotion"], "visual_id": row["visual"], "scene_id": row.get("section", "main"),
+                "caption_emphasis_terms": row.get('caption_emphasis_terms', []),
                 "start": frame_position / 48000, "end": (frame_position + frames) / 48000,
                 "audio_sha256": sha256(directory / "voice.wav"), "cache": str(directory)})
             frame_position += frames
@@ -260,6 +262,7 @@ def render(project, runtime, out, records):
     profile = read_json(ROOT / "config/landscape_profile_v18.json")
     profile["layout"]["background_image"] = runtime["background"]
     atomic_json(out / "profile.json", profile)
+    write_subtitles(records, runtime['font'], profile['layout'], out)
     visuals = []
     for visual in project["visuals"]:
         visuals.append({**visual, "source_credit": visual.get("source_credit", "利用者提供素材"),
@@ -314,6 +317,7 @@ def execute(args):
     fingerprint_seconds = round(time.monotonic() - fingerprint_started, 3)
     implementation = {str(p.relative_to(ROOT)): sha256(p) for directory in (ROOT, ROOT / "renderer", ROOT / "config")
                       for p in directory.iterdir() if p.is_file() and p.suffix in (".py", ".json") and p.name != "runtime.local.json"}
+    implementation['requirements.txt'] = sha256(ROOT / 'requirements.txt')
     asset_files = [v["file"] for v in project["visuals"]] + [v["video_file"] for v in project["visuals"] if v.get("video_file")]
     if project.get("audio", {}).get("bgm"):
         asset_files.append(project["audio"]["bgm"])

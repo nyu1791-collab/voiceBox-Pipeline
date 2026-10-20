@@ -24,4 +24,4 @@ jobs:
           sudo apt-get install -y --no-install-recommends ffmpeg libcairo2 fonts-dejavu-core
           python -m pip install -r requirements.txt pytest
           python -m playwright install --with-deps chromium
-      - run: python -m pytest tests/test_preparation.py tests/test_media_editing.py -q
+      - run: python -m pytest tests/test_preparation.py tests/test_media_editing.py tests/test_subtitle_tools.py -q
