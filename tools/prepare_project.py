@@ -43,6 +43,22 @@ def prepare(request, output, script=None, *, allow_api=False, executable_path=No
             'viewport_only': True, 'article_region': True,
             'region_selector': override.get('selector', request.get('capture_selector')),
             'heading': override.get('heading'), 'crops': override.get('crops', [])})
+    # Bind explicit paragraph choices to dialogue before launching the browser.
+    assignments = {}
+    for target in targets:
+        names = set()
+        for crop in target['crops']:
+            name = crop['name']
+            if name in names or name == 'article':
+                raise ValueError('Crop names must be unique and not article')
+            names.add(name)
+            for line_id in crop.get('line_ids', []):
+                line = next((r for r in project['lines'] if r['id'] == line_id), None)
+                if line is None or line['source_id'] != target['id']:
+                    raise ValueError('Crop line_ids must reference dialogue using the same source')
+                if line_id in assignments:
+                    raise ValueError('Each dialogue line can select only one crop')
+                assignments[line_id] = target['id'] + ':' + name
     captures = asyncio.run(capture_targets(targets, output / 'materials', executable_path=executable_path,
                                           max_workers=4, retry_delays=()))
     by_id = {c['id']: c for c in captures}
@@ -56,17 +72,24 @@ def prepare(request, output, script=None, *, allow_api=False, executable_path=No
         if capture.get('error') or not crop or any(not c.get('found') for c in requested):
             failures.append(source['id'])
             continue
-        visuals.append({'id': source['id'], 'file': 'materials/' + crop['file'],
-            'source_url': source.get('final_url', source['url']), 'source_credit': source['title'],
-            'captured_utc': capture['captured_utc'], 'sha256': crop['sha256']})
+        # Keep the original source ID as the backwards-compatible default image.
+        choices = [(source['id'], crop)] + [
+            (source['id'] + ':' + item['name'], item) for item in requested]
+        for visual_id, item in choices:
+            visuals.append({'id': visual_id, 'file': 'materials/' + item['file'],
+                'source_url': source.get('final_url', source['url']), 'source_credit': source['title'],
+                'captured_utc': capture['captured_utc'], 'sha256': item['sha256']})
     if failures:
         atomic_json(output / 'preparation.json', {'status': 'FAILED', 'capture_failures': failures})
         raise RuntimeError('Referenced page capture failed; see materials/manifest.json')
+    for line in project['lines']:
+        if line['id'] in assignments:
+            line['visual'] = assignments[line['id']]
     project['visuals'] = visuals
     project.setdefault('audio', {'normalize': True})
     atomic_json(output / 'project.json', project)
     load_project(output / 'project.json')
-    result = {'status': 'PROJECT_READY', 'sources': len(pack['sources']), 'screenshots': len(visuals),
+    result = {'status': 'PROJECT_READY', 'sources': len(pack['sources']), 'screenshots': len({v['file'] for v in visuals}),
               'lines': len(project['lines']), 'provider': provider if generated else 'provided',
               'seconds': round(time.monotonic()-started, 3), 'video_created': False}
     atomic_json(output / 'preparation.json', result)

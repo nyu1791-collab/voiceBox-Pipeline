@@ -147,3 +147,42 @@ def test_se_uses_actual_timing_and_thumbnail_uses_real_frame(tmp_path):
     with Image.open(thumbnail) as image:
         assert image.size == (1280, 720)
         assert image.getpixel((10, 710))[1] > 100
+
+
+def test_dialogue_selects_distinct_source_paragraphs(source_site, tmp_path):
+    url = source_site + '/article.html'
+    sid = source_id(url)
+    article = tmp_path / 'site/article.html'
+    article.write_text(article.read_text().replace('</main>',
+        '<p>A separate paragraph describes platform support.</p></main>'))
+    script = [{'id': 11, 'speaker': 'zundamon', 'text': '音声の説明なのだ。', 'source_id': sid},
+              {'id': 12, 'speaker': 'metan', 'text': '次は対応環境の説明よ。', 'source_id': sid}]
+    request = {'topic': 'CPU音声', 'urls': [url], 'news': False, 'search': False,
+               'capture_overrides': {sid: {'crops': [
+                   {'name': 'audio', 'text': 'waveform', 'line_ids': [11]},
+                   {'name': 'platform', 'text': 'A separate paragraph', 'line_ids': [12]}]}}}
+    output = tmp_path / 'multiple'
+    result = prepare(request, output, script, executable_path=shutil.which('chromium'))
+    project = json.loads((output / 'project.json').read_text())
+    assert result['screenshots'] == 2
+    assert [r['visual'] for r in project['lines']] == [sid + ':audio', sid + ':platform']
+    assert [r['text'] for r in project['lines']] == [r['text'] for r in script]
+    visuals = {v['id']: v for v in project['visuals']}
+    assert visuals[sid + ':audio']['sha256'] != visuals[sid + ':platform']['sha256']
+    assert all((output / v['file']).is_file() and v['source_url'] == url for v in visuals.values())
+
+
+@pytest.mark.parametrize('line_ids', [[999], [11, 11]])
+def test_invalid_crop_dialogue_binding_stops_before_capture(source_site, tmp_path, monkeypatch, line_ids):
+    url = source_site + '/article.html'
+    sid = source_id(url)
+    def no_capture(*args, **kwargs):
+        pytest.fail('invalid mapping must be rejected before browser startup')
+    monkeypatch.setattr('tools.prepare_project.capture_targets', no_capture)
+    request = {'topic': 'CPU音声', 'urls': [url], 'news': False, 'search': False,
+               'capture_overrides': {sid: {'crops': [
+                   {'name': 'audio', 'text': 'waveform', 'line_ids': line_ids}]}}}
+    script = [{'id': 11, 'speaker': 'zundamon', 'text': '説明なのだ。', 'source_id': sid},
+              {'id': 12, 'speaker': 'metan', 'text': '説明よ。', 'source_id': sid}]
+    with pytest.raises(ValueError, match='line_ids|only one crop'):
+        prepare(request, tmp_path / 'invalid-mapping', script)

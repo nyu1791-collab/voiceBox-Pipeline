@@ -57,7 +57,7 @@ materials/   # 指定画像・SVG・動画・任意BGM
 
 画像・動画・BGMの相対パスは台本JSONのフォルダが基準。`visuals` の各項目に `id`、出典情報 `source_credit/source_url` を付けます。画像の代わりに `clips` を指定する場合は `file` を省略できます。
 
-標準の最終動画は240p（426×240）・15fps、H.264 preset veryfast・CRF20、AAC 48kHz mono。1280×720のレイアウトで描画し、最終映像を240pへ縮小します。字幕は描画時にZen Maru Gothic Medium 36px・最大3行。声はVOICEVOX style3/2、原音話速1.10・後段1.15。字幕本文を保持し、長文は時間方向に分けます。静止画だけの既存台本も同じ入口で動きます。
+標準の最終動画は360p（640×360）・24fps、H.264 preset veryfast・CRF20、AAC 48kHz mono。1280×720のレイアウトで描画し、最終映像を360pへ縮小します。字幕は描画時にZen Maru Gothic Medium 36px・最大3行。声はVOICEVOX style3/2、原音話速1.10・後段1.15。字幕本文を保持し、長文は時間方向に分けます。静止画だけの既存台本も同じ入口で動きます。
 
 ## Google Driveへリポジトリを同期
 
@@ -116,3 +116,5 @@ OpenCodeの場合は、動画workflowでも `script_provider:opencode` を明示
 見直した5工程と実装の境界は [必読ルール](docs/RULES.md#全体を把握する) に記載。現行のresearch-request制作は調査→台本→撮影→音声→描画の順。テーマだけで起動する統一入口、音声と撮影の並列化、共通素材の独立登録、完成MP4のDrive自動転送は未接続です。Google Newsの集約URLから配信元の記事を解決する処理も未実装で、本文未取得を取得成功に数えません。
 
 必読は [docs/RULES.md](docs/RULES.md) だけ。ツールの由来と条件は [THIRD_PARTY.md](THIRD_PARTY.md)。過去のVM動作記録は [docs/RUN_RESULT.md](docs/RUN_RESULT.md) です。
+
+資料ごとに複数のスクショを切り替える場合、`capture_overrides.<source_id>.crops` の各項目に `name`・引用段落の `text`・対応する台詞IDの `line_ids` を指定します。例：`{"name":"typing","text":"TypeIs","line_ids":[6]}`。同じ出典の台詞だけに割り当てられ、指定段落が見つからない場合は制作を停止します。

@@ -2,7 +2,7 @@
   "layout": {
     "width": 1280,
     "height": 720,
-    "fps": 15,
+    "fps": 24,
     "background": "#E9EEF5",
     "header_background": "#F3F0E6",
     "evidence_panel": "#FFFFFF",
@@ -143,9 +143,9 @@
     "frame_state_cache_entries": 24,
     "preflight_before_heavy_bootstrap": true,
     "one_final_encode": true,
-    "routine_fps": 15,
-    "quality_master_fps": 15,
-    "reason": "USER_REQUESTED_15_FPS_OUTPUT",
+    "routine_fps": 24,
+    "quality_master_fps": 24,
+    "reason": "USER_REQUESTED_360P_24_FPS_OUTPUT",
     "visual_beat_seconds": 10,
     "visual_entry_seconds": 1.5,
     "visual_nudge_seconds": 2.5,
@@ -168,8 +168,8 @@
     "bar_now": "#2B6146"
   },
   "output": {
-    "width": 426,
-    "height": 240
+    "width": 640,
+    "height": 360
   },
   "profile_id": "zundamon-cpu-v1-from-v18"
 }
