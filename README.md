@@ -79,6 +79,8 @@ GitHub Actionsから追跡対象ファイルのスナップショットをGoogle
 
 10プロセスは10倍速を保証しません。実行記録の `max_parallel_synthesis`・起動時間・音声工程・描画時間を見ます。同じ音声と成功済み動画は再利用し、入力が変わった時は新しい出力先を指定します。
 
+公式エンジンのSHA計算結果はユーザーの `$XDG_CACHE_HOME/voicebox-tools/engine-fingerprints/`（未設定時は `~/.cache/voicebox-tools/engine-fingerprints/`）に保存し、新しい作業用cloneでも再利用します。エンジン内の対象ファイルのパス・サイズ・mtime・ctimeが一致する時だけ使い、変更時は再計算します。壊れたキャッシュは再計算し、キャッシュへ書き込めない場合も計算済みSHAで続行します。台本・素材・認証情報はこのキャッシュに保存しません。
+
 ## 情報収集からJSON台本へ
 
 [Actions → Research and JSON Project](https://github.com/nyu1791-collab/voiceBox-Pipeline/actions/workflows/prepare-project.yml) でテーマを入力。既定の `provider:none` はAPIキー不要でRSS・DuckDuckGo検索・本文抽出を行い、`research.json` と `script-prompt.json` をArtifactsへ残す。検索結果だけを正しい台本と見なしたり、台本未生成の状態を完成動画と表示したりしません。

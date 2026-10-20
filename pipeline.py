@@ -18,7 +18,7 @@ import time
 import uuid
 import wave
 
-from engine_pool import EnginePool, WORKERS, engine_fingerprint
+from engine_pool import EnginePool, WORKERS, engine_fingerprint, engine_fingerprint_cache
 from media_editing import prepare_visual, mux_audio, sound_effects, make_thumbnail
 from subtitle_tools import write_subtitles
 
@@ -312,7 +312,7 @@ def execute(args):
     runtime = read_json(ROOT / "runtime.local.json")
     project = load_project(project_path)
     fingerprint_started = time.monotonic()
-    engine_sha = engine_fingerprint(runtime["engine_dir"], ROOT / ".cache/engine-fingerprint.json")
+    engine_sha = engine_fingerprint(runtime["engine_dir"], engine_fingerprint_cache(runtime["engine_dir"]))
     shell = Path(runtime["shell"])
     shell_sha = json_digest({str(p.relative_to(shell)): sha256(p) for p in sorted(shell.rglob("*.png"))})
     fingerprint_seconds = round(time.monotonic() - fingerprint_started, 3)

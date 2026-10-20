@@ -108,7 +108,7 @@ def demo(engine, font, working, output):
     project = {"title": "VOICEVOX CPU10並列 動作デモ", "lines": lines, "visuals": [visual]}
     pipeline.atomic_json(working / "project.json", project)
     records, audio_report = pipeline.prepare_audio(project, {"engine_dir": str(engine)}, output,
-        pipeline.engine_fingerprint(engine, ROOT / ".cache/engine-fingerprint.json"))
+        pipeline.engine_fingerprint(engine, pipeline.engine_fingerprint_cache(engine)))
     duration = records[-1]["end"]
     source_clips = []
     for index, color in enumerate(((70, 150, 110), (75, 120, 185))):
