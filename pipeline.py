@@ -111,6 +111,8 @@ def load_project(path):
     lines = project.get("lines")
     if not isinstance(lines, list) or not lines:
         raise ValueError("lines must be a nonempty array")
+    from renderer.production_cues import validate_direction
+    validate_direction(project)
     ids = set()
     for row in lines:
         if not isinstance(row.get("id"), int) or isinstance(row["id"], bool) or row["id"] in ids:
@@ -134,6 +136,20 @@ def load_project(path):
         if visual.get('source_language') == 'en' and (
                 not isinstance(visual.get('translation'), str) or not visual['translation'].strip()):
             raise ValueError('English evidence requires a Japanese translation')
+        if visual.get('kind') in ('evidence_screenshot','source_context','figure'):
+            from datetime import datetime
+            import re
+            digest = visual.get('sha256','')
+            if not isinstance(digest,str) or not re.fullmatch('[a-f0-9]{64}',digest):
+                raise ValueError('Captured evidence needs an original SHA-256')
+            if not str(visual.get('source_url','')).startswith('https://') or not visual.get('captured_utc'):
+                raise ValueError('Captured evidence needs its HTTPS source and capture time')
+            stamp = datetime.fromisoformat(visual['captured_utc'].replace('Z','+00:00'))
+            if stamp.tzinfo is None or stamp.utcoffset().total_seconds() != 0:
+                raise ValueError('Capture time must identify UTC')
+            source = (path.parent / visual['file']).resolve()
+            if sha256(source) != digest:
+                raise ValueError('Captured evidence file SHA-256 mismatch')
         prepared = prepare_visual(visual, path.parent, ROOT / ".cache/edited-assets")
         visual.clear()
         visual.update(prepared)
@@ -142,6 +158,9 @@ def load_project(path):
         if row["visual"] not in visual_ids:
             raise ValueError(f"Unknown visual in line {row['id']}")
     audio = project.get("audio", {})
+    if not isinstance(audio.get('credits', []), list) or any(
+            not isinstance(credit, str) for credit in audio.get('credits', [])):
+        raise ValueError('audio.credits must be a list of credit strings')
     if audio.get("bgm"):
         audio["bgm"] = str((path.parent / audio["bgm"]).resolve())
         if not Path(audio["bgm"]).is_file():
@@ -159,6 +178,12 @@ def load_project(path):
             row['se'] = resolve_cue(row['se'])
     if audio.get('transition_se'):
         audio['transition_se'] = resolve_cue(audio['transition_se'])
+    if audio.get('chapter_se'):
+        audio['chapter_se'] = resolve_cue(audio['chapter_se'])
+    from renderer.evidence_shots import validate_shots
+    validate_shots(project)
+    from renderer.production_cues import attach_motion
+    attach_motion(project, None, {}, None)
     return project
 
 
@@ -249,6 +274,7 @@ def prepare_audio(project, runtime, out, engine_sha):
             records.append({"id": row["id"], "speaker": row["speaker"],
                 "voicevox_speaker_id": SPEAKERS[row["speaker"]], "caption_text": row["text"],
                 "emotion": row["emotion"], "visual_id": row["visual"], "scene_id": row.get("section", "main"),
+                "voice_text": row["text"],
                 "caption_emphasis_terms": row.get('caption_emphasis_terms', []),
                 "start": frame_position / 48000, "end": (frame_position + frames) / 48000,
                 "audio_sha256": sha256(directory / "voice.wav"), "cache": str(directory)})
@@ -262,6 +288,12 @@ def prepare_audio(project, runtime, out, engine_sha):
 
 def render(project, runtime, out, records):
     started = time.monotonic()
+    from renderer.evidence_shots import compile_shots
+    from renderer.production_cues import compile_direction
+    direction = compile_direction(project, records)
+    hidden = [(w["start"],w["end"]) for w in direction["overview"]]
+    evidence_timeline = compile_shots(project, records, hidden)
+    effects = sound_effects(project, records)
     profile = read_json(ROOT / "config/landscape_profile_v18.json")
     output_width, output_height = profile['output']['width'], profile['output']['height']
     profile["layout"]["background_image"] = runtime["background"]
@@ -273,12 +305,26 @@ def render(project, runtime, out, records):
             "source_url": visual.get("source_url", "user-provided:local-image"),
             "source_label": visual.get("source_label", visual.get("source_credit", "利用者提供素材")),
             "media_region_only": True, "zoom_crop": 0.0})
-    sections = [{"id": section, "heading": section if section != "main" else project["title"]}
+    chapter_titles = {c['id']: f"第{i}章 {c['title']}" for i,c in enumerate(project.get('chapters', []),1)}
+    sections = [{"id": section, "heading": chapter_titles.get(section, section if section != "main" else project["title"])}
                 for section in dict.fromkeys(row["scene_id"] for row in records)]
     presentation = {"title": project["title"], "voice_credit": "VOICEVOX:ずんだもん・四国めたん",
         "source_credit": " / ".join(dict.fromkeys(v["source_credit"] for v in visuals)),
         "source_url": visuals[0]["source_url"], "visuals": visuals, "sections": sections}
+    from renderer.production_cues import compile_direction, attach_motion, validate_direction_layout
+    validate_direction_layout(project,runtime['font'])
+    presentation['production_cues'] = direction
+    presentation['evidence_timeline'] = evidence_timeline
+    presentation['evidence_shots'] = project.get('evidence_shots',[])
+    attach_motion(project, records, presentation, out)
+    hidden += [(d['start'],d['end']) for d in presentation.get('motion_diagrams',{}).get('diagrams',[])]
+    evidence_timeline = compile_shots(project,records,hidden)
+    presentation['evidence_timeline'] = evidence_timeline
     atomic_json(out / "presentation.json", presentation)
+    atomic_json(out / "evidence-timeline.json", evidence_timeline)
+    (out/'chapters.txt').write_text('\n'.join(
+        f"{int(c['start'])//60:02d}:{int(c['start'])%60:02d} 第{c['index']}章 {c['title']}"
+        for c in presentation['production_cues']['chapters'])+'\n')
     env = dict(os.environ, VIDEO_REVIEW_MODE="batch", DIRECT_ENCODE="1", OUT_CRF="20",
                OUT_VF=f"scale={output_width}:{output_height}:flags=lanczos", OUT_PRESET="veryfast", DIRECT_THREADS="4",
                CUDA_VISIBLE_DEVICES="-1")
@@ -292,7 +338,6 @@ def render(project, runtime, out, records):
         "--cache-root", str(ROOT / ".cache/characters"), "--output", str(temporary)],
         env=env, log=out / "render.log")
     final_temp = out / ("final-" + uuid.uuid4().hex + ".mp4")
-    effects = sound_effects(project, records)
     mux_audio(temporary, out / "narration.wav", final_temp, {**project.get('audio', {}), 'effects': effects})
     make_thumbnail(final_temp, out / 'thumbnail.png', project.get('thumbnail_title', project['title']), runtime['font'])
     if (out / "video.mp4").exists():
@@ -314,6 +359,10 @@ def execute(args):
     project_path, out = args.project.expanduser().resolve(), args.out.expanduser().resolve()
     runtime = read_json(ROOT / "runtime.local.json")
     project = load_project(project_path)
+    from renderer.production_cues import validate_direction_layout
+    validate_direction_layout(project,runtime['font'])
+    from renderer.evidence_translation import TranslationCards
+    TranslationCards(project["visuals"], read_json(ROOT / "config/landscape_profile_v18.json")["layout"], runtime["font"])
     fingerprint_started = time.monotonic()
     engine_sha = engine_fingerprint(runtime["engine_dir"], engine_fingerprint_cache(runtime["engine_dir"]))
     shell = Path(runtime["shell"])
@@ -328,6 +377,8 @@ def execute(args):
     asset_files += [r['se']['file'] for r in project['lines'] if r.get('se')]
     if project.get('audio', {}).get('transition_se'):
         asset_files.append(project['audio']['transition_se']['file'])
+    if project.get('audio', {}).get('chapter_se'):
+        asset_files.append(project['audio']['chapter_se']['file'])
     input_key = json_digest({"project": project, "assets": {p: sha256(p) for p in asset_files},
         "font": sha256(runtime["font"]), "background": sha256(runtime["background"]),
         "engine": engine_sha, "shell": shell_sha, "implementation": implementation})
@@ -355,6 +406,12 @@ def execute(args):
             (out / "script.txt").write_text("\n".join(f"{r['speaker']}：{r['text']}" for r in project["lines"]) + "\n")
             (out / "description.txt").write_text(project["title"] + "\n\nVOICEVOX:ずんだもん\nVOICEVOX:四国めたん\n\n" +
                 "\n".join(f"{v.get('source_credit', '利用者提供素材')} {v.get('source_url', '')}" for v in project["visuals"]) + "\n")
+            with (out/'description.txt').open('a') as description:
+                chapters = (out/'chapters.txt').read_text().strip()
+                if chapters:
+                    description.write('\n章立て\n'+chapters+'\n')
+                for credit in project.get('audio', {}).get('credits', []):
+                    description.write('\n'+str(credit)+'\n')
             state.update(status="COMPLETE", video=str(out / "video.mp4"), video_sha256=sha256(out / "video.mp4"),
                 bytes=(out / "video.mp4").stat().st_size, duration=float(probe["format"]["duration"]),
                 total_seconds=round(time.monotonic() - started, 3), render_seconds=render_seconds,

@@ -89,6 +89,7 @@ jobs:
             ${{ runner.temp }}/voicebox-output/thumbnail.png
             ${{ runner.temp }}/voicebox-output/sound-effects.json
             ${{ runner.temp }}/voicebox-output/description.txt
+            ${{ runner.temp }}/voicebox-output/chapters.txt
             ${{ runner.temp }}/voicebox-output/subtitles.srt
             ${{ runner.temp }}/voicebox-output/subtitles.ass
             ${{ runner.temp }}/voicebox-output/subtitles.vtt

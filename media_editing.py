@@ -181,13 +181,38 @@ def mux_audio(silent_video, narration, destination, settings=None):
 def sound_effects(project, records):
     """Bind authored cues to actual processed VOICEVOX times, never guessed text lengths."""
     result = []
+    if len(project['lines']) != len(records) or any(
+            row.get('id') is not None and timing.get('id') is not None and row['id'] != timing['id']
+            for row,timing in zip(project['lines'],records)):
+        raise ValueError('SE records must match the project dialogue')
+    for timing in records:
+        if any(type(timing.get(k)) not in (int,float) or not math.isfinite(timing[k]) for k in ('start','end')) or not 0 <= timing['start'] < timing['end']:
+            raise ValueError('SE records need finite positive dialogue intervals')
     previous_visual = None
     transition = project.get('audio', {}).get('transition_se')
+    authored_transition = transition
+    if project.get('evidence_shots'):
+        transition = None
+    chapter_cue = project.get('audio', {}).get('chapter_se')
+    previous_section = None
+    last_transition = -math.inf
+    gap = float(project.get('audio', {}).get('transition_min_gap', 0))
+    if not math.isfinite(gap) or gap < 0:
+        raise ValueError('transition_min_gap must be finite and nonnegative')
     for row, timing in zip(project['lines'], records):
         cues = [row['se']] if row.get('se') else []
-        if transition and previous_visual is not None and row['visual'] != previous_visual:
+        section = row.get('section', 'main')
+        chapter_changed = (chapter_cue and section != previous_section
+                           and section not in ('intro', 'closing'))
+        if chapter_changed:
+            cues.append(chapter_cue)
+            last_transition = timing['start']
+        elif (transition and previous_visual is not None and row['visual'] != previous_visual
+              and timing['start']-last_transition >= gap):
             cues.append(transition)
+            last_transition = timing['start']
         previous_visual = row['visual']
+        previous_section = section
         for cue in cues:
             cue = {'file': cue} if isinstance(cue, str) else dict(cue)
             offset = float(cue.pop('offset', 0))
@@ -195,7 +220,17 @@ def sound_effects(project, records):
                 raise ValueError('SE offset must fall inside its spoken line')
             result.append({**cue, 'start': timing['start']+offset,
                            'duration': min(float(cue.get('duration', 1)), timing['end']-timing['start']-offset)})
-    return result
+    if project.get('evidence_shots') and authored_transition:
+        from renderer.evidence_shots import compile_shots
+        shots = compile_shots(project,records)
+        for shot in shots[1:]:
+            start = shot['start']
+            if any(abs(c['start']-start)<gap for c in result):
+                continue
+            cue = {'file':authored_transition} if isinstance(authored_transition,str) else dict(authored_transition)
+            cue.pop('offset',None)
+            result.append({**cue,'start':start,'duration':min(float(cue.get('duration',1)),shot['end']-start)})
+    return sorted(result,key=lambda c:c['start'])
 
 
 def make_thumbnail(video, destination, title, font):

@@ -15,6 +15,7 @@ from media_editing import VideoPanels
 from evidence_translation import TranslationCards
 from subtitle_tools import wrap_japanese, phrase_breaks
 from motion_diagrams import bound_timeline, active_diagram, cache_state as motion_cache_state, render_panel as render_motion_panel
+from production_cues import draw_direction, cache_state as direction_cache_state
 import argparse, hashlib, json, math, re, signal, wave, time
 from collections import OrderedDict
 from functools import lru_cache  # 字幕の折り返しの結果の再利用（フォントは共有しない）
@@ -199,7 +200,7 @@ def draw_summary_block(d,layout,font_path,item):
     _sf=_font(str(font_path),int(layout.get("summary_font_size",22)))
     for _i,_ln in enumerate(_sum): d.text((_sx1+14,_sy1+2+_i*SUMMARY_LINE_H),_ln,font=_sf,fill="#17202F")
 
-def build_backgrounds(profile, presentation, presentation_path, font_path):
+def build_backgrounds(profile, presentation, presentation_path, font_path, translation_cards=None):
     layout=profile["layout"]; W,H=layout["width"],layout["height"]
     title_font=_font(str(font_path),layout["title_font_size"])
     small=_font(str(font_path),layout["source_font_size"])
@@ -227,7 +228,7 @@ def build_backgrounds(profile, presentation, presentation_path, font_path):
         _tp=tuple(_tx) if _tx else tuple(zones["title"])
         d.text(_tp,heading,font=title_font,fill=layout.get("header_text_color","#FFFFFF"),**({"anchor":"lm"} if _tx else {}))
 
-        ex1,ey1,ex2,ey2=zones["evidence"]
+        ex1,ey1,ex2,ey2=(translation_cards.evidence_region(item["id"]) if translation_cards else zones["evidence"])
         d.rounded_rectangle((ex1,ey1,ex2,ey2),radius=22,fill=layout["evidence_panel"],outline="#C9D5E3",width=2)
         visual=_contained_visual(str(src),ex2-ex1-34,ey2-ey1-34).copy()
         bg.paste(visual,(ex1+(ex2-ex1-visual.width)//2,ey1+(ey2-ey1-visual.height)//2))
@@ -533,16 +534,17 @@ def draw_chapter_card(card, elapsed, cfg, font_path, W, H):
         put_char("四国めたん", "right", clamp(e / 0.3), -12 * abs(math.sin(e * 8 + 0.8)) * (1 if e < 1.2 else 0), clamp(e / 0.15))
     return base.convert("RGB")
 
-def build_visual_layers(profile, presentation, presentation_path, font_path):
+def build_visual_layers(profile, presentation, presentation_path, font_path, translation_cards=None):
     """場面ごとに、板（背景・見出し・声の表示）と、図の枠（白い枠と図）を分けて作る（v20）。枠だけを動かすため。
     枠の位置と大きさは従来の描画と同じ。戻り値は {場面 id: (板, 枠の RGBA, (x, y))}。"""
     layout=profile["layout"]; W,H=layout["width"],layout["height"]
     title_font=_font(str(font_path),layout["title_font_size"])
     small=_font(str(font_path),layout["source_font_size"])
     zones=layout["zones"]; ex1,ey1,ex2,ey2=zones["evidence"]
-    pw,ph=ex2-ex1+1,ey2-ey1+1
     out={}
     for item in (presentation.get("visuals") or [presentation]):
+        ex1,ey1,ex2,ey2=(translation_cards.evidence_region(item["id"]) if translation_cards else zones["evidence"])
+        pw,ph=ex2-ex1+1,ey2-ey1+1
         src=Path(item["file"])
         if not src.is_absolute(): src=presentation_path.parent/src
         bg=(_resized_bg(layout["background_image"],W,H).copy() if layout.get("background_image") else Image.new("RGB",(W,H),layout["background"]))
@@ -620,6 +622,10 @@ def render(args):
         if not presentation.get(field): raise ValueError(f"missing presentation field: {field}")
 
     timing=json.loads(args.timing.read_text(encoding="utf-8"))
+    compact_captions = layout.get('caption_layout') == 'compact_v18'
+    render_preflight = validate_render_plan(profile,presentation,timing,args.font,
+                                            draw_caption_compact if compact_captions else None,
+                                            caption_states if compact_captions else None)
     verified_motion_timeline=bound_timeline(presentation,timing["records"],args.presentation.parent,profile=profile)
     records=[{**r,"start":r["start"]-args.start,"end":r["end"]-args.start}
              for r in timing["records"] if r["end"]>args.start and r["start"]<args.start+args.duration]
@@ -638,13 +644,15 @@ def render(args):
         variants[speaker],char_keys[speaker]=character_variants(args.shell/char,char,args.cache_root or args.output.parent/"reusable-assets")
         _CARD_CHARS[speaker]=_prep_card_char(variants[speaker])
 
-    backgrounds,visual_hashes=build_backgrounds(profile,presentation,args.presentation,args.font)
+    translation_cards = TranslationCards(presentation.get("visuals", []), layout, args.font)
+    backgrounds,visual_hashes=build_backgrounds(profile,presentation,args.presentation,args.font,translation_cards)
     default_visual=next(iter(backgrounds))
     perf_cfg=profile.get("performance") or {}
     layered=bool(perf_cfg.get("visual_entry_seconds"))  # v20（2026-10-16）：入りの動きと章カード。値が無い版は従来の描画のまま
-    layers=build_visual_layers(profile,presentation,args.presentation,args.font) if layered else None
+    layers=build_visual_layers(profile,presentation,args.presentation,args.font,translation_cards) if layered else None
     motion_timeline=verified_motion_timeline or {}
     chapter_cards=presentation.get("chapter_cards") or []
+    production_cues=presentation.get('production_cues') or {}
     card_cfg=profile.get("chapter_card") or {}
     for r in records:
         if r["speaker"] not in variants: raise ValueError("unsupported speaker")
@@ -693,7 +701,16 @@ def render(args):
              "-ss",str(args.start),"-i",str(args.audio),"-vf","scale=640:360:flags=lanczos","-c:v","libx264","-preset","medium","-threads","2","-b:v","144k","-maxrate","168k","-bufsize","288k","-pix_fmt","yuv420p",
              "-af",audio_filter,"-c:a","aac","-b:a","48k","-ar","48000","-movflags","+faststart","-shortest",str(out)]
     character_positions={}; character_frame_evidence={}
-    translation_cards = TranslationCards(presentation.get("visuals", []), layout, args.font)
+    from evidence_shots import shot_at, compile_shots
+    shot_project = {'lines':[{'id':x['id'],'visual':x.get('visual_id',default_visual),
+                             'section':x.get('scene_id','main')} for x in timing['records']],
+                    'visuals':presentation.get('visuals',[]),
+                    'evidence_shots':presentation.get('evidence_shots',[])}
+    hidden = [(w['start'],w['end']) for w in production_cues.get('overview',[])]
+    hidden += [(d['start'],d['end']) for d in motion_timeline.get('diagrams',[])]
+    evidence_timeline = compile_shots(shot_project,timing['records'],hidden)
+    if evidence_timeline != presentation.get('evidence_timeline',[]):
+        raise ValueError('Screenshot timeline differs from measured speech')
     video_panels = VideoPanels(presentation.get("visuals", []))
     with closing(video_panels), encoder_process(cmd, flush_timeout=None) as process:
 
@@ -730,10 +747,14 @@ def render(args):
                 continue
             candidate=records[record_idx] if record_idx<len(records) else None
             r=candidate if candidate and candidate["start"]<=t<candidate["end"] else None
-            if r:
+            if r and not evidence_timeline:
                 _vid=r.get("visual_id",default_visual)
                 if _vid!=current_visual: visual_started=t
                 current_visual=_vid
+            shot = shot_at(evidence_timeline,t+args.start)
+            if shot is not None:
+                current_visual=shot["visual"]
+                visual_started=shot["start"]-args.start
             speaker=r["speaker"] if r else None
             expression=r.get("emotion","NORMAL") if r else "NORMAL"
 
@@ -783,6 +804,7 @@ def render(args):
             translation_state = translation_cards.state(current_visual, t-r["start"] if r else 0, r["end"]-r["start"] if r else 1)
             frame_key=(translation_state,beat_key,speaker,expression,mouth,caption,tuple((x[0],x[2],x[3],x[4]) for x in char_states),bump,sb_scene,sb_pose)
             frame_key += (motion_cache_state(motion_timeline,t+args.start,FPS),)
+            frame_key += (direction_cache_state(production_cues,t+args.start),)
             if current_visual in video_panels.paths:
                 frame_key += (i,)
             cached=frame_cache.get(frame_key)
@@ -810,11 +832,12 @@ def render(args):
                 frame=backgrounds[beat_key].copy(); d=ImageDraw.Draw(frame)
             translation_cards.draw(frame, translation_state)
             motion = active_diagram(motion_timeline,t+args.start)
-            if motion is not None and MOTION_TEXT_IN_VISUAL_SLOT:  # R69：図解の文字は枠に載せない
-                ex1,ey1,ex2,ey2=layout['zones']['evidence']
+            if motion is not None and presentation.get('motion_in_visual_slot', MOTION_TEXT_IN_VISUAL_SLOT):
+                ex1,ey1,ex2,ey2=presentation.get('motion_region', layout['zones']['evidence'])
                 panel=render_motion_panel(motion,t+args.start,(ex2-ex1,ey2-ey1),args.font,
                                           int(perf_cfg.get('diagram_supersample',4)))
                 frame.paste(panel,(ex1,ey1)); d=ImageDraw.Draw(frame)
+            draw_direction(frame,production_cues,t+args.start,args.font)
             if sb_scene is not None:
                 sb_img,sb_xy=sidebar_state(sb_scene,sb_pose); frame.paste(sb_img,sb_xy,sb_img); sidebar_seen.add(sb_scene)
             for name,side,active,state,expr in char_states:
@@ -880,6 +903,9 @@ def render(args):
 
     report={
       "preview_only":bool(getattr(args, "preview", False)),
+      "preflight":render_preflight,
+      "translations":translation_cards.report(),
+      "evidence_timeline":evidence_timeline,
       "duration":args.duration,"canvas":[W,H],"orientation":"LANDSCAPE_16_9",
       "mouth_states":{k:sorted(v) for k,v in mouth_seen.items()},
       "expressions":{k:sorted(v) for k,v in expr_seen.items()},

@@ -177,13 +177,12 @@ def main():
             project = extract_project(archive, working / "project")
             assets_root = project.parent
             if project.name == 'research-request.json':
-                from tools.prepare_project import prepare
                 request = json.loads(project.read_text())
                 selected = os.environ.get('SCRIPT_PROVIDER', 'request')
                 if (selected == 'opencode') != (request.get('provider') == 'opencode'):
                     raise ValueError('OpenCode requires matching script_provider and research-request.json provider')
                 prepared = working / 'prepared-project'
-                prepare(request, prepared, allow_api=os.environ.get('ALLOW_SCRIPT_API') == 'true',
+                prepare_research_request(request, prepared, allow_api=os.environ.get('ALLOW_SCRIPT_API') == 'true',
                         executable_path=os.environ.get('PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH'))
                 project = prepared / 'project.json'
                 if not project.is_file():
@@ -199,6 +198,16 @@ def main():
     if summary:
         with open(summary, "a") as stream:
             stream.write("## VOICEVOX CPU / video result\n\n```json\n" + json.dumps(result, ensure_ascii=False, indent=2) + "\n```\n")
+
+
+def prepare_research_request(request, output, **kwargs):
+    from tools.prepare_project import prepare
+    from tools.prepare_trending import prepare_trending
+    mode = request.get('mode', 'standard')
+    if mode not in ('standard', 'evidence_first'):
+        raise ValueError('Unknown research preparation mode')
+    runner = prepare_trending if mode == 'evidence_first' else prepare
+    return runner(request, output, **kwargs)
 
 
 if __name__ == "__main__":

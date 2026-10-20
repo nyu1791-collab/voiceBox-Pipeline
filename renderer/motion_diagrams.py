@@ -175,6 +175,7 @@ def _font(font, size):
     from PIL import ImageFont
     return ImageFont.truetype(str(font), size)
 
+@lru_cache(maxsize=256)
 def _fit(label, font_path, width, height, max_size=25):
     for size in range(max_size, 17, -1):
         font = _font(str(font_path), size); lines = []; line = ''
