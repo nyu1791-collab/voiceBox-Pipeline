@@ -39,6 +39,23 @@ def test_discovered_bodies_and_failures_are_not_fetched_again(monkeypatch):
     assert rejected[0]['rejection_reason'] == 'BODY_UNAVAILABLE'
 
 
+def test_unverified_page_date_is_not_recent_article_date(monkeypatch):
+    row={'id':'s','url':'https://official.test/article','extraction_status':'EXTRACTED',
+         'article_published':'2026-10-20','body_sha256':'abc',
+         'publication_checks':{'state':'NOT_FOUND','published_at':None}}
+    accepted,rejected=trending.select_official({'sources':[row]},['official.test'],date(2026,10,14),date(2026,10,20))
+    assert not accepted and rejected[0]['rejection_reason']=='PUBLICATION_DATE_UNAVAILABLE'
+
+
+def test_capture_ignores_newsletter_and_removes_extractor_bullet_prefix():
+    promo='Features on AI-assisted discoveries, practical workflows, and field notes across the sciences.'
+    quote='US adults expect AI capabilities to advance rapidly in the coming years; staff expectations differ.'
+    targets,evidence=trending.evidence_targets([{'id':'s','url':'https://official.test/article',
+                                               'text':promo+'\n- '+quote}])
+    assert targets[0]['crops'][0]['text']==quote
+    assert len(evidence)==1 and evidence[0]['text']==quote
+
+
 @pytest.mark.parametrize('capture_success', [True, False])
 def test_only_captured_paragraphs_reach_one_model_call(tmp_path, monkeypatch, capture_success):
     from PIL import Image

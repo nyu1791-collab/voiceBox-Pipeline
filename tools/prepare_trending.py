@@ -5,6 +5,7 @@ from concurrent.futures import ThreadPoolExecutor
 from contextlib import contextmanager
 from datetime import date, datetime, timedelta, timezone
 import json
+import re
 from pathlib import Path
 import sys
 import time
@@ -47,7 +48,9 @@ def select_official(pack, hosts, since, until, maximum=4):
             known[row['url']] = row
             known[row.get('final_url', row['url'])] = row
         for url in [row.get('final_url', row['url']), *row.get('links', [])]:
-            if official_url(url, hosts):
+            path = urlsplit(url).path.rstrip('/')
+            if (official_url(url, hosts) and path not in ('', '/research', '/news', '/policy')
+                    and '/team/' not in path):
                 candidates.setdefault(url, {'id': source_id(url), 'url': url, 'title': '',
                                            'discovered_from': row['url']})
     # Bound requests, preserve provenance, and never use aggregator text as primary evidence.
@@ -65,8 +68,11 @@ def select_official(pack, hosts, since, until, maximum=4):
         elif not official_url(row.get('final_url', row['url']), hosts):
             reason = 'REDIRECT_OUTSIDE_OFFICIAL_HOSTS'
         else:
+            checks = row.get('publication_checks')
+            value = (checks.get('published_at') if isinstance(checks, dict)
+                     else row.get('article_published'))
             try:
-                published = date.fromisoformat((row.get('article_published') or '')[:10])
+                published = date.fromisoformat((value or '')[:10])
             except ValueError:
                 reason = 'PUBLICATION_DATE_UNAVAILABLE'
             else:
@@ -84,8 +90,14 @@ def evidence_targets(sources):
     targets, evidence = [], []
     for row in sources:
         # Capture actual extracted paragraphs. The DOM matcher must find the exact text.
-        paragraphs = list(dict.fromkeys(p.strip() for p in row['text'].splitlines()
-                                       if 80 <= len(p.strip()) <= 600))[:3]
+        paragraphs = []
+        for raw in row['text'].splitlines():
+            text = re.sub(r'^[-•]\s+', '', raw.strip())
+            if (80 <= len(text) <= 600 and text not in paragraphs
+                    and not re.search(r'subscribe|newsletter|sign up|features on AI-assisted discoveries|'
+                                      r'get updates on|メルマガ|ニュースレター', text, re.I)):
+                paragraphs.append(text)
+        paragraphs = paragraphs[:3]
         crops = []
         for index, text in enumerate(paragraphs, 1):
             name = f'paragraph-{index}'

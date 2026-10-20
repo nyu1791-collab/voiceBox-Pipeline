@@ -119,6 +119,8 @@ def extract_source(source):
             body_sha256=hashlib.sha256(text.encode()).hexdigest())
         source['links'] = list(dict.fromkeys(links.urls))[:200]
         source['language'] = article.get('language') or links.language
+        from renderer.story_contract import date_receipt
+        source['publication_checks'] = date_receipt(data.decode('utf-8', errors='replace'), text)
     except Exception as error:
         source.update(text='', extraction_status='FAILED', error=type(error).__name__)
     source['retrieved_utc'] = datetime.now(timezone.utc).isoformat()
