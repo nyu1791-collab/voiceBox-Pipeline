@@ -93,8 +93,11 @@ def extract_source(source):
             def __init__(self):
                 super().__init__()
                 self.urls = []
+                self.language = None
 
             def handle_starttag(self, tag, attrs):
+                if tag == 'html':
+                    self.language = dict(attrs).get('lang', '').lower().split('-')[0] or None
                 if tag == 'a':
                     href = dict(attrs).get('href', '')
                     url = urljoin(final_url, href).split('#')[0]
@@ -112,7 +115,7 @@ def extract_source(source):
             article_published=article.get('date'), author=article.get('author'), extraction_status='EXTRACTED',
             body_sha256=hashlib.sha256(text.encode()).hexdigest())
         source['links'] = list(dict.fromkeys(links.urls))[:200]
-        source['language'] = article.get('language')
+        source['language'] = article.get('language') or links.language
     except Exception as error:
         source.update(text='', extraction_status='FAILED', error=type(error).__name__)
     source['retrieved_utc'] = datetime.now(timezone.utc).isoformat()
