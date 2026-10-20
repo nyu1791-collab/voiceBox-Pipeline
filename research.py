@@ -2,7 +2,8 @@
 from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime, timezone
 from pathlib import Path
-from urllib.parse import urlsplit, quote, urlencode, parse_qs
+from urllib.parse import urlsplit, quote, urlencode, parse_qs, urljoin
+from html.parser import HTMLParser
 import hashlib
 import json
 import os
@@ -88,6 +89,19 @@ def extract_source(source):
     source = dict(source)
     try:
         data, final_url = fetch(source['url'])
+        class Links(HTMLParser):
+            def __init__(self):
+                super().__init__()
+                self.urls = []
+
+            def handle_starttag(self, tag, attrs):
+                if tag == 'a':
+                    href = dict(attrs).get('href', '')
+                    url = urljoin(final_url, href).split('#')[0]
+                    if href and urlsplit(url).scheme in ('http', 'https'):
+                        self.urls.append(url)
+        links = Links()
+        links.feed(data.decode('utf-8', errors='replace'))
         extracted = trafilatura.extract(data, output_format='json', include_comments=False,
                                         include_tables=True, with_metadata=True)
         article = json.loads(extracted) if extracted else {}
@@ -97,6 +111,8 @@ def extract_source(source):
         source.update(text=text[:18000], final_url=final_url, title=article.get('title') or source['title'],
             article_published=article.get('date'), author=article.get('author'), extraction_status='EXTRACTED',
             body_sha256=hashlib.sha256(text.encode()).hexdigest())
+        source['links'] = list(dict.fromkeys(links.urls))[:200]
+        source['language'] = article.get('language')
     except Exception as error:
         source.update(text='', extraction_status='FAILED', error=type(error).__name__)
     source['retrieved_utc'] = datetime.now(timezone.utc).isoformat()

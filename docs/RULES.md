@@ -23,6 +23,7 @@ flowchart TD
 - GitHub側の入口は `.github/workflows/voicevox-cpu-video.yml`。公式CPU配布の取得・キャッシュ・音声生成・MP4保存をランナー上で実行する。台本・原素材は提供ZIPから一時領域へ展開し、Gitへコミットしない。Actionsの共有キャッシュは公式エンジンと公式フォントだけ。ユーザー領域のエンジン指紋キャッシュは非秘密のメタデータ専用で、制作物の共有領域にはしない。
 - ローカルの入口は `./zundamon-video`、本体 `pipeline.py`、音声管理 `engine_pool.py`、描画は `renderer/render_reusable_landscape_raw.py`、見た目は `config/landscape_profile_v18.json`。
 - 情報準備の入口は `tools/prepare_project.py` / `.github/workflows/prepare-project.yml`。提供台本を使う場合はLLMを呼ばない。台本APIは選択provider・model・認証・明示許可が揃った時だけ1回使い、有料fallbackは入れない。本文取得失敗や撮影失敗を成功扱いしない。
+- トレンドの一次資料・撮影を先行する任意経路は `tools/prepare_trending.py` / 同workflowの `mode:evidence_first`。[入力と制約](TREND_EVIDENCE_WORKFLOW.md)を参照。撮影済み段落だけで台本を生成し、出典と画像IDを対応させる。従来の提供台本経路は変更しない。
 - OpenCodeの台本providerは `provider:opencode` / `model:deepseek-v4.1-flash-free`。CLI表記は `opencode/deepseek-v4.1-flash-free`。1017は告知上の更新名で、架空の別モデルIDを作らない。公式CLI `opencode-ai@1.19.0` を使い、直接API用のクライアント偽装・有料fallbackは入れない。
 - `opencode_script.py` の台本生成は認証付き一時loopbackサーバーで1回だけ。ツールを承認せず、ツール要求・再試行・追加生成・別モデルを検知したら終了する。動画workflowでは `script_provider:opencode` とZIP内providerを一致させる。利用者が別途任せた「OpenCodeでVM制作を実行する」作業はツールを使う別の実行経路であり、この台本専用制約と混同しない。委任時は既存の権限範囲・無料モデル・出力先・停止条件を具体的に渡す。
 - `setup` は既存資産の場所を `runtime.local.json` に登録する初回処理。制作は `run project.json --out 新しい出力先` 一回で最後まで進める。
