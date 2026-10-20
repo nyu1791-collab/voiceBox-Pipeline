@@ -85,6 +85,10 @@ GitHub Actionsから追跡対象ファイルのスナップショットをGoogle
 
 GeminiまたはGroqで台本も生成する場合は、providerと具体的なmodelを指定し、選択したサービスのActions Secret `GEMINI_API_KEY` / `GROQ_API_KEY` を設定。1回の明示呼出しだけで、別モデルへのfallbackや自動再試行はありません。無料枠の適用はそのアカウント・モデルの条件によります。Tavily・Perplexityの有料APIは標準経路へ追加していません。
 
+OpenCode無料版は `provider:opencode`、`model:deepseek-v4.1-flash-free` とSecret `OPENCODE_API_KEY` を使います。[公式告知](https://x.com/opencode/status/2112220734768779441)では、この無料版も1017へ更新済みで、モデルIDの変更は不要です。無料提供は期間限定で、Goの有料モデルとは区別します。直接推論APIの `403 FreeTierError` を回避する独自ヘッダーは作らず、動作を確認した公式 `opencode-ai@1.19.0` のローカルサーバーを使います。ActionsはOpenCode選択時だけCLIを導入します。ローカルでは事前に `npm install --global opencode-ai@1.19.0` を実行してください。
+
+接続だけを調べる場合は [OpenCode Free Connection](https://github.com/nyu1791-collab/voiceBox-Pipeline/actions/workflows/check-opencode-free.yml) を手動実行します。架空資料から短いJSON台本を1回生成して検証し、台本本文を保存せず、モデル・正常終了・トークン数・カタログ上のコスト等の非秘密receiptだけをArtifactsへ残します。音声・動画・記事取得は実行しません。CLIは認証付きのloopbackで一時起動し、他サービスの認証や既存設定を渡さず、ツール要求・再試行・別モデル・不完全な応答を検知したら停止します。
+
 ローカルでは次の入口を使います。`request.json`・`script.json` は利用者の作業フォルダに置き、Gitへコミットしません。
 
 ```bash
@@ -102,6 +106,8 @@ GeminiまたはGroqで台本も生成する場合は、providerと具体的なmo
 台本がある場合、Playwright Chromiumが参照する記事だけを最大4並列で撮影。既存Cookieは使わず、広告や本文を勝手に書き換えません。本文見出しと文章を持つ領域を選び、高さ700px以内で切り出し、URL・撮影時刻・SHA付きで `materials/manifest.json` へ記録。関連記事の先頭カードを自動的に本文と決めつけません。撮影失敗は記録して停止し、別画像へ置換しません。全体の `capture_selector`、または `capture_overrides: {"資料ID":{"selector":".article-body","heading":"本文見出し","crops":[{"name":"claim","text":"切り抜く段落の一部"}]}}` で指定できます。指定段落があればその切り抜きを資料として優先し、見つからない場合は停止します。10サイトが何秒で完了するかは接続先次第です。
 
 生成した `project.json` と `materials/` に正規立ち絵・背景・`runtime-assets.json` を合わせて入力ZIPにすれば、そのままproductionへ渡せます。また、production ZIPの `project.json` を `research-request.json` に置き換え、provider/modelを指定し、起動時の `allow_script_api` を有効にすると、記事収集→JSON台本→撮影→CPU音声→動画まで同じランナーで続行します。台本APIのSecretがない場合は自動生成できません。目標分数は台本作成の目安で、最終実尺は音声生成後のmetricsで示します。
+
+OpenCodeの場合は、動画workflowでも `script_provider:opencode` を明示選択してください。ZIPの `research-request.json` のproviderと一致しない場合は停止します。既存のGemini/Groqは既定の `script_provider:request` を使います。提供済みの `project.json` から制作する場合は台本APIを呼びません。
 
 `RESEARCH_READY` は情報収集済み、`PROJECT_READY` は台本と撮影素材の準備済み。MP4完成とは区別します。これらのAPIによる新規台本生成・任意ニュース全体の正確性まで、ローカルの結合テストが保証するものではありません。YouTubeへの自動投稿は含めません。
 

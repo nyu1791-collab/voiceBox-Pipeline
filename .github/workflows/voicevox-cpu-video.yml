@@ -14,9 +14,14 @@ on:
         type: string
         required: false
       allow_script_api:
-        description: 'research-request.jsonで指定したGemini/Groqの台本APIを許可（自動fallbackなし）'
+        description: 'research-request.jsonで指定した台本APIを許可（自動fallbackなし）'
         type: boolean
         default: false
+      script_provider:
+        description: 'OpenCode無料版はopencodeを明示選択。既存Gemini/Groqはrequest'
+        type: choice
+        options: [request, opencode]
+        default: request
 
 permissions:
   contents: read
@@ -41,6 +46,13 @@ jobs:
         with:
           python-version: '3.11'
           cache: pip
+      - uses: actions/setup-node@v4
+        if: inputs.mode == 'production' && inputs.allow_script_api && inputs.script_provider == 'opencode'
+        with:
+          node-version: '22'
+      - name: Install verified official OpenCode CLI
+        if: inputs.mode == 'production' && inputs.allow_script_api && inputs.script_provider == 'opencode'
+        run: npm install --global opencode-ai@1.19.0
       - name: CPU tools
         run: |
           sudo apt-get update -qq
@@ -61,8 +73,10 @@ jobs:
           RUN_MODE: ${{ inputs.mode || 'demo' }}
           PROJECT_ZIP_URL: ${{ inputs.project_zip_url || secrets.PROJECT_ZIP_URL }}
           ALLOW_SCRIPT_API: ${{ inputs.allow_script_api || 'false' }}
-          GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
-          GROQ_API_KEY: ${{ secrets.GROQ_API_KEY }}
+          SCRIPT_PROVIDER: ${{ inputs.script_provider || 'request' }}
+          GEMINI_API_KEY: ${{ inputs.script_provider != 'opencode' && secrets.GEMINI_API_KEY || '' }}
+          GROQ_API_KEY: ${{ inputs.script_provider != 'opencode' && secrets.GROQ_API_KEY || '' }}
+          OPENCODE_API_KEY: ${{ inputs.mode == 'production' && inputs.allow_script_api && inputs.script_provider == 'opencode' && secrets.OPENCODE_API_KEY || '' }}
         run: python tools/actions_run.py --mode "$RUN_MODE" --engine-dir "$VOICEVOX_DIR" --output "$RUNNER_TEMP/voicebox-output"
       - name: Store completed MP4 and technical result
         uses: actions/upload-artifact@v4

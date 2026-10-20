@@ -176,6 +176,9 @@ def main():
             if project.name == 'research-request.json':
                 from tools.prepare_project import prepare
                 request = json.loads(project.read_text())
+                selected = os.environ.get('SCRIPT_PROVIDER', 'request')
+                if (selected == 'opencode') != (request.get('provider') == 'opencode'):
+                    raise ValueError('OpenCode requires matching script_provider and research-request.json provider')
                 prepared = working / 'prepared-project'
                 prepare(request, prepared, allow_api=os.environ.get('ALLOW_SCRIPT_API') == 'true',
                         executable_path=os.environ.get('PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH'))

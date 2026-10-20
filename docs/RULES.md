@@ -23,6 +23,7 @@ flowchart TD
 - GitHub側の入口は `.github/workflows/voicevox-cpu-video.yml`。公式CPU配布の取得・キャッシュ・音声生成・MP4保存をランナー上で実行する。台本・原素材は提供ZIPから一時領域へ展開し、Gitへコミットしない。共有キャッシュは公式エンジンと公式フォントだけ。
 - ローカルの入口は `./zundamon-video`、本体 `pipeline.py`、音声管理 `engine_pool.py`、描画は `renderer/render_reusable_landscape_raw.py`、見た目は `config/landscape_profile_v18.json`。
 - 情報準備の入口は `tools/prepare_project.py` / `.github/workflows/prepare-project.yml`。提供台本を使う場合はLLMを呼ばない。台本APIは選択provider・model・認証・明示許可が揃った時だけ1回使い、有料fallbackは入れない。本文取得失敗や撮影失敗を成功扱いしない。
+- OpenCodeは `provider:opencode` / `model:deepseek-v4.1-flash-free` のみ。公式CLI `opencode-ai@1.19.0` の一時ローカルサーバーを使い、直接API用のクライアント偽装はしない。ツールを承認せず、再試行・追加生成・別モデルを検知したら起動したプロセス群を終了する。動画workflowでは `script_provider:opencode` とZIP内providerを一致させる。
 - `setup` は既存資産の場所を `runtime.local.json` に登録する初回処理。制作は `run project.json --out 新しい出力先` 一回で最後まで進める。
 - `state.json` で現在工程を見る。`AUDIO → RENDER → COMPLETE`。実エラーは `FAILED` と原因を残す。失敗を成功と書かない。
 
