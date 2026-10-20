@@ -6,10 +6,15 @@
 - [Zen Maru Gothic](https://github.com/googlefonts/zen-marugothic)：VMのMediumフォント、または公式Google Fontsの固定コミット・SHAに一致するフォントを使う。OFLの配布物を参照し、Gitへ同梱しない。
 - 立ち絵：坂本アヒル氏の正規素材をNightWork氏のシェルパーツから既存描画器で合成する。[ずんだもん](https://seiga.nicovideo.jp/seiga/im10788496)、[四国めたん](https://seiga.nicovideo.jp/seiga/im10791276)、[シェル配布元](https://nightwork.sakura.ne.jp/)。承認済みVM素材を参照し、原素材は同梱しない。
 - 黒板：利用者が提供したVMの既存画像を参照する。同梱しない。
-- `renderer/` は既存VMの描画コードを移植したもの。由来・元のSHAは `source-provenance.json`。外部工程の古い補助関数も互換のため保持しているが、この制作入口は台本作成・素材検索・外部モーション・GPU・モデル呼出しへ分岐しない。
+- `renderer/` は既存VMの描画コードを移植したもの。由来・元のSHAは `source-provenance.json`。任意の台本準備・検索は `tools/prepare_project.py` が担当し、GPUや外部モーションへ自動分岐しない。
 - `examples/*.png` はこのリポジトリの `tools/make_example.py` が描く説明図。外部の画面・報道写真・実測結果ではない。
 
 - [MoviePy](https://github.com/Zulko/moviepy)：2.2.1、MIT。動画の切り抜き・クロップ・クロスフェード・動画資料のフレーム取得。
 - [CairoSVG](https://github.com/Kozea/CairoSVG)：2.9.1、LGPL-3.0。提供SVGを高解像度PNGへ変換。
 - [Remotion](https://github.com/remotion-dev/remotion)も調査したが、利用条件が異なるため今回の標準依存には追加しない。
 - Actionsのdemoは一時領域で組み立てた短い音声・動く図形・テスト用合成音による機能実行。正規立ち絵を使うproductionと区別する。
+- [DDGS](https://github.com/deedy5/ddgs)：9.16.0、MIT。DuckDuckGoバックエンドで検索。提供先の接続制限に従い、無制限再試行はしない。
+- [feedparser](https://github.com/kurtmckee/feedparser)：6.0.14、BSD。RSS/Atomを読み取る。PyGoogleNewsの代わりにフィードを直接取得する。
+- [Trafilatura](https://github.com/adbar/trafilatura)：2.3.1、Apache-2.0。記事本文とメタデータの抽出。抽出結果を自動的な事実確認と扱わない。
+- [Playwright](https://github.com/microsoft/playwright-python)：1.64.0、Apache-2.0。ヘッドレスChromiumで参照先を並列撮影。既存の `renderer/material_capture.py` を再利用し、Chrome固定パスを取り除いた。
+- 任意のGemini/Groq呼出しは各サービスのAPI条件に従う。無料枠・速度・Actions全体の無期限無料を保証しない。新規契約・キー作成・自動課金切替は実装しない。

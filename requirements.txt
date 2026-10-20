@@ -2,3 +2,7 @@ Pillow>=10.4,<12
 moviepy==2.2.1
 CairoSVG==2.9.1
 numpy>=1.25,<2.5
+ddgs==9.16.0
+feedparser==6.0.14
+trafilatura==2.3.1
+playwright==1.64.0

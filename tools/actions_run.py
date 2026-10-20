@@ -15,7 +15,7 @@ import zipfile
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
 import pipeline
-from media_editing import edit_sequence, mux_audio, prepare_visual
+from media_editing import edit_sequence, mux_audio, prepare_visual, make_thumbnail
 
 FONT_COMMIT = "ef3b6f8df2d299a7a82c68cd8743c8f9c11e1c8f"
 FONT_URL = f"https://raw.githubusercontent.com/google/fonts/{FONT_COMMIT}/ofl/zenmarugothic/ZenMaruGothic-Medium.ttf"
@@ -48,9 +48,9 @@ def extract_project(archive, destination):
             if total > 4 * 1024**3:
                 raise ValueError("Expanded input exceeds 4 GiB")
         bundle.extractall(destination)
-    projects = list(destination.rglob("project.json"))
+    projects = list(destination.rglob("project.json")) + list(destination.rglob('research-request.json'))
     if len(projects) != 1:
-        raise ValueError("ZIP must contain exactly one project.json")
+        raise ValueError("ZIP must contain exactly one project.json or research-request.json")
     return projects[0]
 
 
@@ -68,12 +68,13 @@ def install_font(directory):
     return path
 
 
-def production(project_path, engine, font, output):
-    configuration = project_path.parent / "runtime-assets.json"
+def production(project_path, engine, font, output, assets_root=None):
+    assets_root = assets_root or project_path.parent
+    configuration = assets_root / "runtime-assets.json"
     runtime = json.loads(configuration.read_text())
     for key in ("shell", "background"):
-        path = (project_path.parent / runtime[key]).resolve()
-        if not path.is_relative_to(project_path.parent.resolve()):
+        path = (assets_root / runtime[key]).resolve()
+        if not path.is_relative_to(assets_root.resolve()):
             raise ValueError("Runtime assets must be inside the input project")
         runtime[key] = str(path)
     pipeline.setup(argparse.Namespace(engine_dir=engine, shell=Path(runtime["shell"]),
@@ -139,6 +140,7 @@ def demo(engine, font, working, output):
     subprocess.run(["ffmpeg", "-v", "error", "-f", "lavfi", "-i", "sine=frequency=220:sample_rate=48000",
                     "-t", str(duration), "-c:a", "pcm_s16le", str(bgm)], check=True)
     mux_audio(silent, output / "narration.wav", output / "video.mp4", {"bgm": str(bgm), "bgm_gain_db": -30, "ducking": True})
+    make_thumbnail(output / 'video.mp4', output / 'thumbnail.png', project['title'], font)
     media = json.loads(subprocess.check_output(["ffprobe", "-v", "error", "-show_format", "-show_streams", "-of", "json", str(output / "video.mp4")]))
     if audio_report.get("max_parallel_synthesis", 0) < 2:
         raise RuntimeError("CPU speech requests did not overlap")
@@ -170,7 +172,17 @@ def main():
             archive = working / "input.zip"
             download(url, archive)
             project = extract_project(archive, working / "project")
-            result = production(project, args.engine_dir, font, output)
+            assets_root = project.parent
+            if project.name == 'research-request.json':
+                from tools.prepare_project import prepare
+                request = json.loads(project.read_text())
+                prepared = working / 'prepared-project'
+                prepare(request, prepared, allow_api=os.environ.get('ALLOW_SCRIPT_API') == 'true',
+                        executable_path=os.environ.get('PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH'))
+                project = prepared / 'project.json'
+                if not project.is_file():
+                    raise ValueError('Research finished; production needs a supplied script or an explicitly enabled script API')
+            result = production(project, args.engine_dir, font, output, assets_root=assets_root)
         else:
             result = demo(args.engine_dir, font, working, output)
     result.update(wall_seconds=round(time.monotonic()-started, 3), video_sha256=pipeline.sha256(output / "video.mp4"),

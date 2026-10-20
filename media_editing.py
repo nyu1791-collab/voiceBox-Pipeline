@@ -123,23 +123,99 @@ def mux_audio(silent_video, narration, destination, settings=None):
     command = ["ffmpeg", "-v", "error", "-nostdin", "-i", str(silent_video), "-i", str(narration)]
     normalize = settings.get("normalize", False)
     finish = ("loudnorm=I=-17:TP=-1.5:LRA=9," if normalize else "") + "alimiter=limit=0.78:level=disabled"
+    effects = settings.get('effects', [])
+    if len(effects) > 128:
+        raise ValueError('At most 128 sound effect cues per video')
+    graph = '[1:a]volume=6.5dB[voice];'
+    tracks = ['voice']
+    next_input = 2
     if settings.get("bgm"):
+        audio_duration = float(subprocess.check_output(['ffprobe', '-v', 'error', '-show_entries',
+            'format=duration', '-of', 'default=noprint_wrappers=1:nokey=1', str(narration)]))
+        if not math.isfinite(audio_duration) or audio_duration <= 0:
+            raise ValueError('Narration must have a finite positive duration')
         gain = float(settings.get("bgm_gain_db", -24))
         if not math.isfinite(gain) or not -60 <= gain <= -12:
             raise ValueError("bgm_gain_db must be between -60 and -12")
-        command += ["-stream_loop", "-1", "-i", str(settings["bgm"])]
-        graph = "[1:a]volume=6.5dB,asplit=2[voice][side];" + f"[2:a]volume={gain}dB[bed];"
+        # A finite bed avoids filter scheduling stalls with delayed SE and loudnorm lookahead.
+        command += ["-stream_loop", "-1", '-t', str(audio_duration), "-i", str(settings["bgm"])]
+        graph = '[1:a]volume=6.5dB,asplit=2[voice][side];' + f'[{next_input}:a]volume={gain}dB[bed];'
+        next_input += 1
         if settings.get("ducking", True):
             graph += "[bed][side]sidechaincompress=threshold=0.025:ratio=8:attack=20:release=250[music];"
         else:
             graph += "[side]anullsink;[bed]anull[music];"
-        graph += "[voice][music]amix=inputs=2:duration=first:normalize=0," + finish + "[audio]"
-        command += ["-filter_complex", graph, "-map", "0:v:0", "-map", "[audio]"]
+        tracks.append('music')
+    for index, effect in enumerate(effects):
+        start, duration = float(effect['start']), float(effect.get('duration', 1))
+        gain = float(effect.get('gain_db', -18))
+        if not all(map(math.isfinite, (start, duration, gain))) or start < 0 or not 0 < duration <= 10 or not -60 <= gain <= 0:
+            raise ValueError('Invalid SE timing, duration (0..10s) or gain (-60..0dB)')
+        command += ['-i', str(effect['file'])]
+        label = f'se{index}'
+        graph += (f'[{next_input}:a]atrim=duration={duration},asetpts=PTS-STARTPTS,'
+                  f'aresample=48000,volume={gain}dB,adelay={round(start*1000)}:all=1[{label}];')
+        next_input += 1
+        tracks.append(label)
+    if len(tracks) > 1:
+        graph += ''.join(f'[{t}]' for t in tracks) + f'amix=inputs={len(tracks)}:duration=first:normalize=0,' + finish + '[audio]'
     else:
-        command += ["-map", "0:v:0", "-map", "1:a:0", "-af", "volume=6.5dB," + finish]
+        graph += '[voice]' + finish + '[audio]'
+    command += ['-filter_complex', graph, '-map', '0:v:0', '-map', '[audio]']
     command += ["-c:v", "copy", "-c:a", "aac", "-b:a", "128k", "-ar", "48000", "-ac", "1",
                 "-movflags", "+faststart", "-shortest", str(destination)]
     subprocess.run(command, check=True)
+
+
+def sound_effects(project, records):
+    """Bind authored cues to actual processed VOICEVOX times, never guessed text lengths."""
+    result = []
+    previous_visual = None
+    transition = project.get('audio', {}).get('transition_se')
+    for row, timing in zip(project['lines'], records):
+        cues = [row['se']] if row.get('se') else []
+        if transition and previous_visual is not None and row['visual'] != previous_visual:
+            cues.append(transition)
+        previous_visual = row['visual']
+        for cue in cues:
+            cue = {'file': cue} if isinstance(cue, str) else dict(cue)
+            offset = float(cue.pop('offset', 0))
+            if not math.isfinite(offset) or not 0 <= offset < timing['end']-timing['start']:
+                raise ValueError('SE offset must fall inside its spoken line')
+            result.append({**cue, 'start': timing['start']+offset,
+                           'duration': min(float(cue.get('duration', 1)), timing['end']-timing['start']-offset)})
+    return result
+
+
+def make_thumbnail(video, destination, title, font):
+    """Use a real completed-video frame; do not generate replacement character art."""
+    from PIL import Image, ImageDraw, ImageFont
+    import io
+    data = subprocess.check_output(['ffmpeg', '-v', 'error', '-i', str(video), '-frames:v', '1',
+                                   '-vf', 'scale=1280:720', '-f', 'image2pipe', '-vcodec', 'png', '-threads', '1', '-'])
+    image = Image.open(io.BytesIO(data)).convert('RGBA')
+    title = ' '.join(title.split())
+    if not title or len(title) > 120:
+        raise ValueError('thumbnail title must contain 1..120 characters')
+    draw = ImageDraw.Draw(image)
+    for size in range(64, 23, -2):
+        face = ImageFont.truetype(str(font), size)
+        lines, line = [], ''
+        for char in title:
+            if line and draw.textlength(line+char, font=face) > 1130:
+                lines.append(line)
+                line = ''
+            line += char
+        lines.append(line)
+        if len(lines) <= 3:
+            break
+    overlay = Image.new('RGBA', image.size)
+    painter = ImageDraw.Draw(overlay)
+    height = len(lines)*(size+14)+40
+    painter.rounded_rectangle((40, 30, 1240, 30+height), radius=18, fill=(15, 39, 28, 235))
+    for i, line in enumerate(lines):
+        painter.text((75, 47+i*(size+14)), line, font=face, fill='white', stroke_width=1)
+    Image.alpha_composite(image, overlay).convert('RGB').save(destination)
 
 
 class VideoPanels:

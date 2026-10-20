@@ -4,10 +4,20 @@
 
 ## 全体を把握する
 
-`提供ZIP（ランナー一時領域） → CPU版VOICEVOX10並列 → 実時刻・字幕・立ち絵・動画編集 → MP4をArtifactsへ`
+```mermaid
+flowchart LR
+  A[指定URL・RSS・検索] --> B[本文・資料ID・取得記録]
+  B --> C[提供JSON / 明示許可した台本API]
+  C --> D[参照記事を最大4並列で撮影]
+  D --> E[提供ZIP・一時領域]
+  E --> F[CPU版VOICEVOX10並列]
+  F --> G[実時刻で字幕・立ち絵・動画・SEを合成]
+  G --> H[MP4・サムネイルをArtifactsへ]
+```
 
 - GitHub側の入口は `.github/workflows/voicevox-cpu-video.yml`。公式CPU配布の取得・キャッシュ・音声生成・MP4保存をランナー上で実行する。台本・原素材は提供ZIPから一時領域へ展開し、Gitへコミットしない。共有キャッシュは公式エンジンと公式フォントだけ。
 - ローカルの入口は `./zundamon-video`、本体 `pipeline.py`、音声管理 `engine_pool.py`、描画は `renderer/render_reusable_landscape_raw.py`、見た目は `config/landscape_profile_v18.json`。
+- 情報準備の入口は `tools/prepare_project.py` / `.github/workflows/prepare-project.yml`。提供台本を使う場合はLLMを呼ばない。台本APIは選択provider・model・認証・明示許可が揃った時だけ1回使い、有料fallbackは入れない。本文取得失敗や撮影失敗を成功扱いしない。
 - `setup` は既存資産の場所を `runtime.local.json` に登録する初回処理。制作は `run project.json --out 新しい出力先` 一回で最後まで進める。
 - `state.json` で現在工程を見る。`AUDIO → RENDER → COMPLETE`。実エラーは `FAILED` と原因を残す。失敗を成功と書かない。
 
@@ -26,6 +36,7 @@
 - 承認済みのずんだもん・めたんの正規パーツを使う。表情は台詞IDの明示キュー。RMS窓0.03秒、閉口閾値0.014、大開き0.07。聞き手と無音は閉口。元の口へ別の口を描き足さない。
 - 喜びは4秒で通常へ戻す。話す側285px、聞く側260px・不透明度0.5。喋り始めの既存の弾みを保つ。音声は既存のgain6.5dBとlimiter0.78、level=disabled。
 - MoviePyで提供クリップの切り抜き・クロスフェード、CairoSVGで自己完結SVGの高解像度化、FFmpegで任意BGMのダッキングを行う。素材編集の符号化と完成映像の符号化を区別する。完成映像は一回符号化し、音声結合時に再符号化しない。複数の完成動画を同時描画しない。
+- SEは提供音源を実VOICEVOX時刻へ配置し、推測した台詞長を使わない。任意の音量正規化は−17LUFS目標と既存limiterを保つ。サムネイルは実動画フレーム＋タイトルから1280×720で出力する。ランダムな効果・毎3秒の強制ズーム・−14LUFSへの一括変更はしない。
 
 ## 保全と再開
 

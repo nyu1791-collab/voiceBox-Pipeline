@@ -1,0 +1,27 @@
+name: Pipeline integration tests
+
+on:
+  push:
+    paths: ['**.py', 'requirements.txt', '.github/workflows/**']
+  pull_request:
+    paths: ['**.py', 'requirements.txt', '.github/workflows/**']
+
+permissions:
+  contents: read
+
+jobs:
+  integration:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 12
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+          cache: pip
+      - run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y --no-install-recommends ffmpeg libcairo2 fonts-dejavu-core
+          python -m pip install -r requirements.txt pytest
+          python -m playwright install --with-deps chromium
+      - run: python -m pytest tests/test_preparation.py tests/test_media_editing.py -q

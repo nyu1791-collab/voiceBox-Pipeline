@@ -19,7 +19,7 @@ import uuid
 import wave
 
 from engine_pool import EnginePool, WORKERS, engine_fingerprint
-from media_editing import prepare_visual, mux_audio
+from media_editing import prepare_visual, mux_audio, sound_effects, make_thumbnail
 
 ROOT = Path(__file__).resolve().parent
 SPEAKERS = {"ずんだもん": 3, "四国めたん": 2}
@@ -104,6 +104,9 @@ def load_project(path):
     project = read_json(path)
     if not isinstance(project.get("title"), str) or not project["title"].strip():
         raise ValueError("title is required")
+    thumbnail_title = project.get('thumbnail_title', project['title'])
+    if not isinstance(thumbnail_title, str) or not 1 <= len(thumbnail_title.strip()) <= 120:
+        raise ValueError('Use thumbnail_title with 1..120 characters')
     lines = project.get("lines")
     if not isinstance(lines, list) or not lines:
         raise ValueError("lines must be a nonempty array")
@@ -139,6 +142,19 @@ def load_project(path):
         audio["bgm"] = str((path.parent / audio["bgm"]).resolve())
         if not Path(audio["bgm"]).is_file():
             raise FileNotFoundError(audio["bgm"])
+    bank = audio.get('se', {})
+    def resolve_cue(cue):
+        cue = {'file': cue} if isinstance(cue, str) else dict(cue)
+        name = cue['file']
+        cue['file'] = str((path.parent / bank.get(name, name)).resolve())
+        if not Path(cue['file']).is_file():
+            raise FileNotFoundError(cue['file'])
+        return cue
+    for row in lines:
+        if row.get('se'):
+            row['se'] = resolve_cue(row['se'])
+    if audio.get('transition_se'):
+        audio['transition_se'] = resolve_cue(audio['transition_se'])
     return project
 
 
@@ -269,10 +285,13 @@ def render(project, runtime, out, records):
         "--cache-root", str(ROOT / ".cache/characters"), "--output", str(temporary)],
         env=env, log=out / "render.log")
     final_temp = out / ("final-" + uuid.uuid4().hex + ".mp4")
-    mux_audio(temporary, out / "narration.wav", final_temp, project.get("audio"))
+    effects = sound_effects(project, records)
+    mux_audio(temporary, out / "narration.wav", final_temp, {**project.get('audio', {}), 'effects': effects})
+    make_thumbnail(final_temp, out / 'thumbnail.png', project.get('thumbnail_title', project['title']), runtime['font'])
     if (out / "video.mp4").exists():
         raise FileExistsError("Will not replace an existing video.mp4")
     final_temp.replace(out / "video.mp4")
+    atomic_json(out / 'sound-effects.json', effects)
     temporary.unlink()
     temporary.with_suffix(".report.json").rename(out / "render-report.json")
     probe = json.loads(subprocess.check_output(["ffprobe", "-v", "error", "-show_streams", "-show_format",
@@ -298,6 +317,9 @@ def execute(args):
     asset_files = [v["file"] for v in project["visuals"]] + [v["video_file"] for v in project["visuals"] if v.get("video_file")]
     if project.get("audio", {}).get("bgm"):
         asset_files.append(project["audio"]["bgm"])
+    asset_files += [r['se']['file'] for r in project['lines'] if r.get('se')]
+    if project.get('audio', {}).get('transition_se'):
+        asset_files.append(project['audio']['transition_se']['file'])
     input_key = json_digest({"project": project, "assets": {p: sha256(p) for p in asset_files},
         "font": sha256(runtime["font"]), "background": sha256(runtime["background"]),
         "engine": engine_sha, "shell": shell_sha, "implementation": implementation})

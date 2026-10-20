@@ -1,0 +1,70 @@
+name: Research and JSON Project
+
+on:
+  workflow_dispatch:
+    inputs:
+      topic:
+        description: '調べるテーマ'
+        required: true
+        type: string
+      source_urls:
+        description: '指定する公開URL（任意・1行1件）。空欄はRSSと検索で収集'
+        type: string
+      provider:
+        description: 'noneは情報収集とプロンプト保存だけ。API利用は明示選択'
+        type: choice
+        options: [none, gemini, groq]
+        default: none
+      model:
+        description: 'API選択時のモデルID。自動選択・fallbackなし'
+        type: string
+      minutes:
+        description: '台本の目標分数。実尺の保証ではない'
+        type: number
+        default: 10
+
+permissions:
+  contents: read
+
+jobs:
+  prepare:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+          cache: pip
+      - name: Research and browser tools
+        run: |
+          python -m pip install -r requirements.txt
+          python -m playwright install --with-deps chromium
+      - name: Collect and prepare
+        env:
+          TOPIC: ${{ inputs.topic }}
+          SOURCE_URLS: ${{ inputs.source_urls }}
+          PROVIDER: ${{ inputs.provider }}
+          MODEL: ${{ inputs.model }}
+          MINUTES: ${{ inputs.minutes }}
+          GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
+          GROQ_API_KEY: ${{ secrets.GROQ_API_KEY }}
+        run: |
+          python - <<'PY'
+          import json, os
+          from pathlib import Path
+          from tools.prepare_project import prepare
+          request = {'topic': os.environ['TOPIC'], 'provider': os.environ['PROVIDER'],
+                     'model': os.environ['MODEL'], 'minutes': float(os.environ['MINUTES']),
+                     'urls': os.environ.get('SOURCE_URLS', '').splitlines()}
+          result = prepare(request, Path(os.environ['RUNNER_TEMP'])/'source-pack',
+                           allow_api=request['provider'] != 'none')
+          print(json.dumps(result, ensure_ascii=False))
+          PY
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: source-pack-${{ github.run_id }}
+          path: ${{ runner.temp }}/source-pack/
+          if-no-files-found: warn
+          retention-days: 7

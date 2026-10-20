@@ -7,7 +7,10 @@ import json
 import time
 from pathlib import Path
 
-from pipeline_common import atomic_json
+try:
+    from .pipeline_common import atomic_json
+except ImportError:
+    from pipeline_common import atomic_json
 
 # Wait before each retry after HTTP 429 (rate limit). Tests override this.
 RETRY_DELAYS = (60, 180)
@@ -51,19 +54,20 @@ def retry_wait(response, default):
     return min(int(value), MAX_RETRY_AFTER) if value.isdigit() else default
 
 
-async def goto_with_retry(page, url, retries):
+async def goto_with_retry(page, url, retries, delays=RETRY_DELAYS):
     """Load a page. On HTTP 429 wait and retry a bounded number of times; record each wait."""
-    for attempt in range(len(RETRY_DELAYS) + 1):
+    for attempt in range(len(delays) + 1):
         response = await page.goto(url, wait_until='domcontentloaded', timeout=30000)
-        if response is None or response.status != 429 or attempt == len(RETRY_DELAYS):
+        if response is None or response.status != 429 or attempt == len(delays):
             return response
-        wait = retry_wait(response, RETRY_DELAYS[attempt])
+        wait = retry_wait(response, delays[attempt])
         retries.append({'status': 429, 'wait_seconds': wait})
         await asyncio.sleep(wait)
     return response
 
 
-async def capture_targets(targets, outdir, playwright_factory=None):
+async def capture_targets(targets, outdir, playwright_factory=None, *, executable_path=None,
+                          max_workers=3, retry_delays=RETRY_DELAYS):
     if playwright_factory is None:
         from playwright.async_api import async_playwright
         playwright_factory = async_playwright
@@ -74,9 +78,9 @@ async def capture_targets(targets, outdir, playwright_factory=None):
         grouped.setdefault(target['url'], []).append(target)
     manifest = []
     async with playwright_factory() as p:
-        browser = await p.chromium.launch(executable_path='/usr/bin/google-chrome',
+        browser = await p.chromium.launch(executable_path=executable_path,
                                           headless=True, args=['--no-sandbox'])
-        semaphore = asyncio.Semaphore(3)
+        semaphore = asyncio.Semaphore(max(1, min(4, max_workers)))
 
         async def grab(url, rows):
             async with semaphore:
@@ -87,17 +91,44 @@ async def capture_targets(targets, outdir, playwright_factory=None):
                             'crops': [], 'retries': retries} for t in rows]
                 used = set()
                 try:
-                    response = await goto_with_retry(page, url, retries)
+                    response = await goto_with_retry(page, url, retries, retry_delays)
                     if response is None or response.status >= 400:
                         raise ValueError('HTTP ' + str(response.status if response else 'no response'))
                     # Font readiness is bounded; analytics must not hold networkidle open.
-                    await page.wait_for_function('document.fonts.status === "loaded"', timeout=3000)
+                    try:
+                        await page.wait_for_function('document.fonts.status === "loaded"', timeout=3000)
+                    except Exception:
+                        pass  # Slow web fonts must not turn a loaded article into a failed capture.
                     stamp = datetime.datetime.now(datetime.timezone.utc).isoformat(timespec='seconds')
                     full = outdir/(hashlib.sha256(url.encode()).hexdigest()[:16]+'_full.png')
-                    await page.screenshot(path=str(full), full_page=True, timeout=12000)
+                    await page.screenshot(path=str(full), full_page=not all(t.get('viewport_only') for t in rows), timeout=12000)
                     for target, entry in zip(rows, entries):
                         entry.update(captured_utc=stamp, title=await page.title(),
                                      files=[{'path': full.name, 'sha256': digest(full)}])
+                        if target.get('region_selector'):
+                            region = {'name': 'article', 'found': False}
+                            try:
+                                selected = None
+                                for selector in target['region_selector'].split(','):
+                                    candidate = page.locator(selector.strip()).first
+                                    if await candidate.count() and await candidate.is_visible():
+                                        selected = candidate
+                                        break
+                                if selected is None:
+                                    raise ValueError('Article region was not found')
+                                await selected.scroll_into_view_if_needed(timeout=4000)
+                                box = await selected.bounding_box()
+                                if not box or box['width'] < 20 or box['height'] < 20:
+                                    raise ValueError('Article region is not visible')
+                                clip = {'x': max(0, box['x']), 'y': max(0, box['y']),
+                                        'width': min(box['width'], 1280-max(0, box['x'])),
+                                        'height': min(box['height'], 700)}
+                                dst = outdir / (hashlib.sha256(target['id'].encode()).hexdigest()[:16]+'_article.png')
+                                await page.screenshot(path=str(dst), clip=clip, timeout=6000)
+                                region.update(found=True, file=dst.name, sha256=digest(dst))
+                            except Exception as exc:
+                                region['error'] = type(exc).__name__ + ': ' + str(exc)[:120]
+                            entry['crops'].append(region)
                         for crop in target.get('crops', []):
                             result = {'name': crop['name'], 'text': crop['text'], 'found': False}
                             try:
