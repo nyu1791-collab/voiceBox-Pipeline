@@ -49,7 +49,7 @@ materials/   # 指定画像・SVG・動画・任意BGM
 
 - **MoviePy 2.2.1**：MP4等をそのまま資料として指定可能。`edit: {"start":1,"end":4,"crop":[0,0,640,360]}` で切り抜き。複数動画は `clips: [{"file":"a.mp4","start":0,"end":3},{"file":"b.mp4","start":1,"end":4}]` と `transition:0.35` でクロスフェード。編集した動画は中央の資料領域で実際に再生し、終端では最終フレームを保持する。
 - **CairoSVG 2.9.1**：`visuals[].file` に自己完結したSVGを指定すると高解像度PNGへ変換。外部URLやローカルファイルを参照するSVGは読み込まない。
-- **FFmpeg**：`audio: {"bgm":"materials/music.wav","bgm_gain_db":-24,"ducking":true}` で、声が出る時にBGMを下げて合成。`normalize:true` を追加すると−17LUFSを狙う正規化を有効化する。BGMは提供素材だけを使い、自動取得しない。
+- **FFmpeg**：`audio: {"bgm":"materials/music.wav","bgm_gain_db":-24,"ducking":true}` で、声が出る時にBGMを下げて合成。`normalize:true` を追加すると−17LUFSを狙う正規化を有効化する。標準CLIはローカルのBGMを読み、自動取得しない。利用者の取得指示がある場合は、担当が配布元の利用条件を確認してVMへ保存する。
 - **効果音**：台詞に `se: {"file":"materials/pop.wav","offset":0,"gain_db":-18,"duration":0.4}` を指定。`offset` は実音声の台詞開始からの秒数。`audio.transition_se` に同じ形式を指定すると資料が切り替わる台詞の開始へ自動配置。`audio.se: {"pop":"materials/pop.wav"}` の登録があれば台詞を `se:"pop"` と短く書ける。SEは提供素材のみ。映像は再符号化せず、声・BGM・SEを音声側で合成し、配置記録を `sound-effects.json` に残す。
 - **サムネイル**：完成映像の実フレームにタイトルを重ね、1280×720の `thumbnail.png` を出力。`thumbnail_title` で短いタイトルを指定できる。キャラクターの代替画像を生成しない。
 - **BudouX 0.9.0**：日本語字幕の文節に合わせて改行。英字語・数値と単位・禁則を保護し、36px・最大3行を維持。長文は縮小せず時間分割する。
@@ -122,3 +122,5 @@ OpenCodeの場合は、動画workflowでも `script_provider:opencode` を明示
 英語の証拠画像は `visuals` に `source_language: "en"` と `translation` を指定します。引用段落を自動撮影する入力では、`capture_overrides.<source_id>.crops` の各項目へ同じ2項目を設定できます。日本語訳は画像直下に28pxで表示し、長文は全文を保ってページを切り替えます。英語と明示された画像で訳がなければ停止します。台詞字幕とは独立した表示です。
 
 BGMは `audio.bgm` のローカル音源を使用し、`bgm_gain_db`（既定−24dB）、`ducking`（既定true）、`bgm_fade_seconds`（既定1.5秒）で調整します。配布元のライセンスと必要なクレジットは作品の概要欄に保持してください。音声結合は映像をコピーし、最後のフレームまで保持します。
+
+現行工程・検証済み完成物・既存音声の再利用・未実装範囲は、[動画制作の詳細移行文](docs/MIGRATION_VIDEO_WORKFLOW_20261020.md)を参照してください。
