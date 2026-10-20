@@ -181,6 +181,13 @@ def mux_audio(silent_video, narration, destination, settings=None):
 def sound_effects(project, records):
     """Bind authored cues to actual processed VOICEVOX times, never guessed text lengths."""
     result = []
+    if len(project['lines']) != len(records) or any(
+            row.get('id') is not None and timing.get('id') is not None and row['id'] != timing['id']
+            for row,timing in zip(project['lines'],records)):
+        raise ValueError('SE records must match the project dialogue')
+    for timing in records:
+        if any(type(timing.get(k)) not in (int,float) or not math.isfinite(timing[k]) for k in ('start','end')) or not 0 <= timing['start'] < timing['end']:
+            raise ValueError('SE records need finite positive dialogue intervals')
     previous_visual = None
     transition = project.get('audio', {}).get('transition_se')
     chapter_cue = project.get('audio', {}).get('chapter_se')
@@ -192,7 +199,7 @@ def sound_effects(project, records):
     for row, timing in zip(project['lines'], records):
         cues = [row['se']] if row.get('se') else []
         section = row.get('section', 'main')
-        chapter_changed = (chapter_cue and previous_section is not None and section != previous_section
+        chapter_changed = (chapter_cue and section != previous_section
                            and section not in ('intro', 'closing'))
         if chapter_changed:
             cues.append(chapter_cue)

@@ -621,6 +621,10 @@ def render(args):
         if not presentation.get(field): raise ValueError(f"missing presentation field: {field}")
 
     timing=json.loads(args.timing.read_text(encoding="utf-8"))
+    compact_captions = layout.get('caption_layout') == 'compact_v18'
+    render_preflight = validate_render_plan(profile,presentation,timing,args.font,
+                                            draw_caption_compact if compact_captions else None,
+                                            caption_states if compact_captions else None)
     verified_motion_timeline=bound_timeline(presentation,timing["records"],args.presentation.parent,profile=profile)
     records=[{**r,"start":r["start"]-args.start,"end":r["end"]-args.start}
              for r in timing["records"] if r["end"]>args.start and r["start"]<args.start+args.duration]
@@ -884,6 +888,7 @@ def render(args):
 
     report={
       "preview_only":bool(getattr(args, "preview", False)),
+      "preflight":render_preflight,
       "duration":args.duration,"canvas":[W,H],"orientation":"LANDSCAPE_16_9",
       "mouth_states":{k:sorted(v) for k,v in mouth_seen.items()},
       "expressions":{k:sorted(v) for k,v in expr_seen.items()},

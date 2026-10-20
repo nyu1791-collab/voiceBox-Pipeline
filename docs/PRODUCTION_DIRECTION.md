@@ -33,7 +33,7 @@
 }
 ```
 
-図を使う入力では、各資料画像に `evidence_text`（撮影した原文）と `source_id`・`source_url` を保持する。新しい `prepare_trending.py` は撮影済み原文を保存する。旧制作物へ勝手に原文を捏造して足さない。
+図表の根拠に使う画像には `evidence_text`（撮影した原文）と `source_id`・`source_url` を保持する。図表に結ばない導入画像に原文を要求しない。新しい `prepare_trending.py` は撮影済み原文を保存する。旧制作物へ勝手に原文を捏造して足さない。
 
 `steps` は `relation:"sequence"` も指定。`bars` は図に共通の指標名 `metric`、各要素に `value`・`unit`・`value_quote` が必要。引用は保存した原文に存在し、指標名・単位・数値が一致しなければ停止する。この照合は、測定条件や母集団が比較可能という意味まで保証しないので、担当がその条件も確かめる。条件が違うものを見かけだけのランキングにしない。
 
@@ -58,3 +58,5 @@ python tools/preview_production_cues.py --project project-demo.json --timing tim
 ```
 
 これは章・図表・音源配置の機能デモ。任意のデモ時刻を使えるため、実VOICEVOX時刻の生成結果とは区別する。キャラクターやナレーションなしのデモを完成した本編として扱わない。
+
+本番経路の結合テストは `tests/test_production_cues.py` にあり、標準 `pipeline.render()` から本番描画器・FFmpegまでを通す。テスト用レイヤーと波形で、登録背景の保持、左右配置、口の状態変化、字幕、章表示、図表、最終MP4のデコードを検証する。実際の承認済み立ち絵やVOICEVOXナレーションでの完成映像を視聴したという意味ではない。

@@ -1,6 +1,7 @@
 """Preview chapter/diagram/SE behavior without rewriting a script or starting TTS."""
 import argparse
 import json
+import math
 from pathlib import Path
 import subprocess
 import sys
@@ -23,6 +24,7 @@ def preview(project, records, output, font):
     attach_motion(project, records, presentation, output)
     timeline = presentation.get('motion_diagrams', {})
     duration, fps = records[-1]['end'], 24
+    speakers = {line['id']:line['speaker'] for line in project['lines']}
     silent = output/'silent.mp4'
     command = ['ffmpeg', '-v', 'error', '-f', 'rawvideo', '-pix_fmt', 'rgb24', '-s', '1280x720',
                '-r', str(fps), '-i', 'pipe:0', '-vf', 'scale=640:360:flags=lanczos', '-an',
@@ -30,7 +32,7 @@ def preview(project, records, output, font):
     face = lambda size: ImageFont.truetype(str(font), size)
     with subprocess.Popen(command, stdin=subprocess.PIPE) as encoder:
         try:
-            for i in range(round(duration*fps)):
+            for i in range(math.ceil(duration*fps)):
                 t = i/fps
                 frame = Image.new('RGB', (1280,720), '#E9EEF5')
                 draw = ImageDraw.Draw(frame)
@@ -43,8 +45,9 @@ def preview(project, records, output, font):
                 row = next((r for r in records if r['start'] <= t < r['end']), None)
                 if row:
                     draw.rounded_rectangle((205,498,1075,666), radius=12, fill='white')
-                    draw.text((225,510), ('質問：' if row['id'] in (2,5) else '解説：')+
-                              ('ずんだもん' if row['id'] in (2,5) else '四国めたん'), font=face(25), fill='#245B43')
+                    speaker = speakers[row['id']]
+                    draw.text((225,510), ('質問：' if speaker == 'ずんだもん' else '解説：')+
+                              speaker, font=face(25), fill='#245B43')
                     text = row['caption_text']
                     for n in range(0,len(text),23):
                         draw.text((225,550+(n//23)*43), text[n:n+23], font=face(32), fill='#26332D')

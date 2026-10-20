@@ -103,8 +103,6 @@ def setup(args):
 
 def load_project(path):
     project = read_json(path)
-    from renderer.production_cues import validate_direction
-    validate_direction(project)
     if not isinstance(project.get("title"), str) or not project["title"].strip():
         raise ValueError("title is required")
     thumbnail_title = project.get('thumbnail_title', project['title'])
@@ -113,6 +111,8 @@ def load_project(path):
     lines = project.get("lines")
     if not isinstance(lines, list) or not lines:
         raise ValueError("lines must be a nonempty array")
+    from renderer.production_cues import validate_direction
+    validate_direction(project)
     ids = set()
     for row in lines:
         if not isinstance(row.get("id"), int) or isinstance(row["id"], bool) or row["id"] in ids:
@@ -272,6 +272,7 @@ def prepare_audio(project, runtime, out, engine_sha):
 
 def render(project, runtime, out, records):
     started = time.monotonic()
+    effects = sound_effects(project, records)
     profile = read_json(ROOT / "config/landscape_profile_v18.json")
     output_width, output_height = profile['output']['width'], profile['output']['height']
     profile["layout"]["background_image"] = runtime["background"]
@@ -283,19 +284,16 @@ def render(project, runtime, out, records):
             "source_url": visual.get("source_url", "user-provided:local-image"),
             "source_label": visual.get("source_label", visual.get("source_credit", "利用者提供素材")),
             "media_region_only": True, "zoom_crop": 0.0})
-    sections = [{"id": section, "heading": section if section != "main" else project["title"]}
+    chapter_titles = {c['id']: f"第{i}章 {c['title']}" for i,c in enumerate(project.get('chapters', []),1)}
+    sections = [{"id": section, "heading": chapter_titles.get(section, section if section != "main" else project["title"])}
                 for section in dict.fromkeys(row["scene_id"] for row in records)]
     presentation = {"title": project["title"], "voice_credit": "VOICEVOX:ずんだもん・四国めたん",
         "source_credit": " / ".join(dict.fromkeys(v["source_credit"] for v in visuals)),
         "source_url": visuals[0]["source_url"], "visuals": visuals, "sections": sections}
-    from renderer.production_cues import compile_direction, attach_motion, draw_direction
+    from renderer.production_cues import compile_direction, attach_motion, validate_direction_layout
+    validate_direction_layout(project,runtime['font'])
     presentation['production_cues'] = compile_direction(project, records)
     attach_motion(project, records, presentation, out)
-    # Reject unreadable overview rows before starting the video encoder.
-    from PIL import Image
-    for window in presentation['production_cues']['overview']:
-        draw_direction(Image.new('RGB', (1280, 720)), presentation['production_cues'],
-                       window['start'], runtime['font'])
     atomic_json(out / "presentation.json", presentation)
     (out/'chapters.txt').write_text('\n'.join(
         f"{int(c['start'])//60:02d}:{int(c['start'])%60:02d} 第{c['index']}章 {c['title']}"
@@ -313,7 +311,6 @@ def render(project, runtime, out, records):
         "--cache-root", str(ROOT / ".cache/characters"), "--output", str(temporary)],
         env=env, log=out / "render.log")
     final_temp = out / ("final-" + uuid.uuid4().hex + ".mp4")
-    effects = sound_effects(project, records)
     mux_audio(temporary, out / "narration.wav", final_temp, {**project.get('audio', {}), 'effects': effects})
     make_thumbnail(final_temp, out / 'thumbnail.png', project.get('thumbnail_title', project['title']), runtime['font'])
     if (out / "video.mp4").exists():
@@ -335,6 +332,8 @@ def execute(args):
     project_path, out = args.project.expanduser().resolve(), args.out.expanduser().resolve()
     runtime = read_json(ROOT / "runtime.local.json")
     project = load_project(project_path)
+    from renderer.production_cues import validate_direction_layout
+    validate_direction_layout(project,runtime['font'])
     fingerprint_started = time.monotonic()
     engine_sha = engine_fingerprint(runtime["engine_dir"], engine_fingerprint_cache(runtime["engine_dir"]))
     shell = Path(runtime["shell"])

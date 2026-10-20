@@ -125,8 +125,9 @@ def main():
             return cue
         if audio.get('bgm'):
             audio['bgm'] = str((args.script.parent / audio['bgm']).resolve())
-        if audio.get('transition_se'):
-            audio['transition_se'] = resolve(audio['transition_se'])
+        for key in ('transition_se', 'chapter_se'):
+            if audio.get(key):
+                audio[key] = resolve(audio[key])
         for line in lines:
             if line.get('se'):
                 line['se'] = resolve(line['se'])
