@@ -45,7 +45,6 @@ jobs:
           GEMINI_API_KEY: ${{ secrets.ANTIGRAVITY_GEMINI_API_KEY }}
           GCP_PROJECT_ID: ${{ vars.GCP_PROJECT_ID }}
           GCP_SERVICE_ACCOUNT: ${{ vars.GCP_SERVICE_ACCOUNT }}
-          GCP_PROJECT_NUMBER: '238830383375'
           GITHUB_RUN_ID: ${{ github.run_id }}
         run: python tools/check_google_connections.py --cli "$RUNNER_TEMP/antigravity-bin/agy" --output "$RUNNER_TEMP/google-connections.json"
       - name: Save non-secret connection receipt

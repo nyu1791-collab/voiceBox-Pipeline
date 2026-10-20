@@ -30,15 +30,18 @@ def check(cli, output):
               "scope": "authentication and metadata only; model inference not tested"}
     try:
         token = os.environ.pop("VERTEX_ACCESS_TOKEN", "")
-        number = os.environ.get("GCP_PROJECT_NUMBER", "")
-        if not token or not re.fullmatch(r"[0-9]+", number):
+        project = report["project_id"]
+        if not token or not re.fullmatch(r"[a-z][a-z0-9-]{4,61}[a-z0-9]", project):
             raise ValueError("Missing Vertex setup")
-        data = read_json("https://serviceusage.googleapis.com/v1/projects/" + number +
-                         "/services/aiplatform.googleapis.com", {"Authorization": "Bearer " + token})
+        # Listing existing Model resources is read-only, has no inference cost,
+        # and uses the actual Vertex AI User role without Service Usage admin access.
+        data = read_json("https://us-central1-aiplatform.googleapis.com/v1/projects/" + project +
+                         "/locations/us-central1/models?pageSize=1", {"Authorization": "Bearer " + token})
         del token
-        if data.get("state") != "ENABLED":
-            raise ValueError("Vertex API is not enabled")
-        report["vertex"] = {"status": "SUCCESS", "api_enabled": True,
+        if not isinstance(data, dict):
+            raise ValueError("Unexpected Vertex metadata response")
+        report["vertex"] = {"status": "SUCCESS", "metadata_access": True,
+                            "metadata_region": "us-central1",
                             "authentication": "GitHub OIDC / WIF / dedicated service account"}
     except Exception as error:
         report["vertex"]["error_type"] = type(error).__name__

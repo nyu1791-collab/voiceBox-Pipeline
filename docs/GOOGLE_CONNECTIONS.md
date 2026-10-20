@@ -33,12 +33,14 @@ CLIは公式配布1.4.3をSHA-512検証してランナー一時領域に取得�
 GitHub Actionsの `Vertex and Antigravity Connections` を開き、mainで `Run workflow` を選ぶ。
 このワークフローだけを起動し、動画・音声・Drive同期・SNS投稿は実行しない。
 
-検証範囲：WIF短期トークン発行、Vertex APIの有効状態の読取り、Geminiモデル一覧の読取り、CLIの版とprovider設定。
+検証範囲：WIF短期トークン発行、Vertex APIの既存Model一覧の読取り（us-central1、0件でも成功）、Geminiモデル一覧の読取り、CLIの版とprovider設定。
 生成API・Antigravityエージェントへのプロンプト送信は0回。
 Artifactsの `google-connections-<run_id>-<attempt>` に、秘密を含まない `google-connections.json` を7日間保存する。
 成功でもモデル推論やエージェント実行済みとは扱わない。失敗時はHTTPステータス・例外型のみを記録し、レスポンス本文・トークン・キーを出さない。
 
-接続確認結果は実行後に本書へ追記する。
+初回の接続確認39437291489ではWIF認証・Antigravity設定は成功。
+Vertex確認に使ったService Usage APIの権限がVertex AI Userに含まれず403となったため、確認を本来のVertex APIの読取りへ修正した。追加の管理者権限は付与していない。
+修正後の接続確認結果は実行後に本書へ追記する。
 
 公式：
 - https://github.com/google-github-actions/auth
