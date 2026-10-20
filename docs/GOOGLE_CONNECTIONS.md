@@ -40,7 +40,18 @@ Artifactsの `google-connections-<run_id>-<attempt>` に、秘密を含まない
 
 初回の接続確認39437291489ではWIF認証・Antigravity設定は成功。
 Vertex確認に使ったService Usage APIの権限がVertex AI Userに含まれず403となったため、確認を本来のVertex APIの読取りへ修正した。追加の管理者権限は付与していない。
-修正後の接続確認結果は実行後に本書へ追記する。
+修正後の接続確認：**SUCCESS**。
+- 実行：https://github.com/nyu1791-collab/voiceBox-Pipeline/actions/runs/39437630042
+- 検証コード：`e8df726ae540170a41a9a44131a0d48fd631f4e4`
+- GitHub OIDC → 専用サービスアカウントの短期トークン発行：成功。
+- Vertex APIの既存Model一覧読取り（us-central1）：成功。
+- 公式Antigravity CLI 1.4.3のチェックサム検証・導入・版確認・provider設定：成功。
+- 専用Secretを使ったGemini APIモデル一覧読取り：成功。
+- Artifact：`google-connections-39437630042-1` の `google-connections.json` を取得して内容確認済み。
+- 生成API呼出し0回。Antigravityエージェントへの指示送信・動画・音声・公開処理は未実施。
+- ローカルの検証では成功・失敗の記録、再試行なし、例外本文やテスト用秘密値がreceiptに入らないことを確認。
+
+利用者からVMでの接続追加を指示された範囲で設定。常設のOwner/Editor権限は追加せず、Vertex AI Userと対象リポジトリのWIFだけを追加した。
 
 公式：
 - https://github.com/google-github-actions/auth
