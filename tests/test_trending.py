@@ -80,6 +80,28 @@ def test_only_captured_paragraphs_reach_one_model_call(tmp_path, monkeypatch, ca
             trending.prepare_trending(request, output, allow_api=True)
         assert events == ['capture']
         assert json.loads((output/'preparation.json').read_text())['status'] == 'FAILED'
+    timing = json.loads((output/'timing.json').read_text())
+    assert timing['status'] == ('PROJECT_READY' if capture_success else 'FAILED')
+    stages = [s['stage'] for s in timing['stages']]
+    assert stages[:3] == ['research', 'official_sources_and_dates', 'browser_capture']
+    assert ('script_generation_including_cli' in stages) == capture_success
+    assert timing['total_seconds'] >= sum(s['seconds'] for s in timing['stages']) - 0.00001
+
+
+def test_discovery_keeps_later_queries_in_the_source_budget(monkeypatch):
+    import ddgs
+    import research
+    class Search:
+        def __init__(self, **kwargs):
+            pass
+        def text(self, query, **kwargs):
+            return [{'href': f'https://news.test/{query}/{i}', 'title': str(i), 'body': ''}
+                    for i in range(6)]
+    monkeypatch.setattr(ddgs, 'DDGS', Search)
+    sources, errors = research.collect_sources({'topic': 'news', 'queries': ['first', 'second'],
+                                                'news': False, 'max_sources': 2})
+    assert [s['query'] for s in sources] == ['first', 'second']
+    assert not errors
 
 
 @pytest.mark.parametrize('eid,translations', [('invented', {}), ('s:p', {}), ('s:p', {'s:p': ''})])

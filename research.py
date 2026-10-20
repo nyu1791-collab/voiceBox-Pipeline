@@ -7,6 +7,7 @@ from html.parser import HTMLParser
 import hashlib
 import json
 import os
+import time
 import urllib.request
 
 
@@ -76,7 +77,9 @@ def collect_sources(request):
     # Explicit sources take precedence; mix discovery providers instead of letting RSS fill every slot.
     rows = list(sources.values())
     selected = [r for r in rows if r['origin'] == 'url']
-    buckets = [[r for r in rows if r['origin'] == kind] for kind in ('rss', 'search')]
+    buckets = [[r for r in rows if r['origin'] == kind and r['query'] == query]
+               for query in dict.fromkeys(r['query'] for r in rows if r['origin'] != 'url')
+               for kind in ('rss', 'search')]
     for i in range(max(map(len, buckets), default=0)):
         for bucket in buckets:
             if i < len(bucket):
@@ -125,11 +128,15 @@ def extract_source(source):
 def research(request):
     if not isinstance(request.get('topic'), str) or not request['topic'].strip():
         raise ValueError('topic is required')
+    started = time.monotonic()
     sources, errors = collect_sources(request)
+    discovered = time.monotonic()
     with ThreadPoolExecutor(max_workers=4) as pool:
         sources = list(pool.map(extract_source, sources))
     return {'topic': request['topic'], 'created_utc': datetime.now(timezone.utc).isoformat(),
-            'sources': sources, 'errors': errors}
+            'sources': sources, 'errors': errors,
+            'timing_seconds': {'discovery': round(discovered-started, 6),
+                               'body_extraction': round(time.monotonic()-discovered, 6)}}
 
 
 def script_prompt(pack, minutes=10):

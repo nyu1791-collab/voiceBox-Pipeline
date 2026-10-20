@@ -2,16 +2,34 @@
 import argparse
 import asyncio
 from concurrent.futures import ThreadPoolExecutor
+from contextlib import contextmanager
 from datetime import date, datetime, timedelta, timezone
 import json
 from pathlib import Path
 import sys
+import time
 from urllib.parse import urlsplit
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 from pipeline import atomic_json, load_project
 from research import research, extract_source, source_id, script_prompt, generate_script, normalize_script
 from renderer.material_capture import capture_targets
+
+
+@contextmanager
+def measured_stage(timing, name):
+    stamp = datetime.now(timezone.utc).isoformat()
+    started = time.monotonic()
+    status = 'FAILED'
+    try:
+        yield
+        status = 'COMPLETE'
+    finally:
+        entry = {'stage': name, 'started_utc': stamp,
+                 'finished_utc': datetime.now(timezone.utc).isoformat(),
+                 'seconds': round(time.monotonic()-started, 6), 'status': status}
+        timing['stages'].append(entry)
+        print(json.dumps(entry), flush=True)
 
 
 def official_url(url, hosts):
@@ -107,7 +125,11 @@ def prepare_trending(request, output, *, allow_api=False, executable_path=None):
     output.mkdir(parents=True, exist_ok=True)
     if any(output.iterdir()):
         raise FileExistsError('Use a new empty preparation output folder')
+    started = time.monotonic()
+    timing = {'started_utc': datetime.now(timezone.utc).isoformat(), 'stages': [],
+              'status': 'FAILED', 'clock': 'monotonic', 'scope': 'prepare_trending_only'}
     try:
+        atomic_json(output/'request.json', request)
         hosts = request.get('official_hosts', [])
         if not hosts or any('/' in h or not h or h != h.lower() for h in hosts):
             raise ValueError('Explicit lowercase official_hosts are required')
@@ -116,17 +138,21 @@ def prepare_trending(request, output, *, allow_api=False, executable_path=None):
         if not 1 <= days <= 30:
             raise ValueError('days must be between 1 and 30')
         since = until - timedelta(days=days-1)
-        pack = research(request)
+        with measured_stage(timing, 'research'):
+            pack = research(request)
+        timing['research_breakdown_seconds'] = pack.get('timing_seconds', {})
         atomic_json(output/'discovery.json', pack)
-        sources, rejected = select_official(pack, hosts, since, until)
+        with measured_stage(timing, 'official_sources_and_dates'):
+            sources, rejected = select_official(pack, hosts, since, until)
         pack = {**pack, 'sources': sources, 'rejected_sources': rejected,
                 'date_window': {'since': str(since), 'until': str(until)}}
         atomic_json(output/'research.json', pack)
         if not sources:
             raise ValueError('No dated official article in the requested window')
         targets, evidence = evidence_targets(sources)
-        captures = asyncio.run(capture_targets(targets, output/'materials',
-            executable_path=executable_path, max_workers=4, retry_delays=()))
+        with measured_stage(timing, 'browser_capture'):
+            captures = asyncio.run(capture_targets(targets, output/'materials',
+                executable_path=executable_path, max_workers=4, retry_delays=()))
         capture_map = {c['id']: c for c in captures}
         usable = []
         for item in evidence:
@@ -164,22 +190,29 @@ def prepare_trending(request, output, *, allow_api=False, executable_path=None):
         if request.get('provider', 'none') == 'none':
             result = {'status': 'EVIDENCE_READY', 'screenshots': len(usable), 'script_generated': False}
         else:
-            script = generate_script(prompt, request['provider'], request.get('model'), allow_api=allow_api)
+            with measured_stage(timing, 'script_generation_including_cli'):
+                script = generate_script(prompt, request['provider'], request.get('model'), allow_api=allow_api)
             atomic_json(output/'script-response.json', script)
-            project = bind_evidence(script, prompt_pack, usable)
-            atomic_json(output/'project.json', project)
-            load_project(output/'project.json')
-            (output/'script.md').write_text('# '+project['title']+'\n\n'+ '\n\n'.join(
-                f"**{r['speaker']}**：{r['text']}\n\n出典：{next(e['source_url'] for e in usable if e['id'] == r['evidence_id'])}"
-                for r in project['lines'])+'\n')
+            with measured_stage(timing, 'validate_and_save'):
+                project = bind_evidence(script, prompt_pack, usable)
+                atomic_json(output/'project.json', project)
+                load_project(output/'project.json')
+                (output/'script.md').write_text('# '+project['title']+'\n\n'+ '\n\n'.join(
+                    f"**{r['speaker']}**：{r['text']}\n\n出典：{next(e['source_url'] for e in usable if e['id'] == r['evidence_id'])}"
+                    for r in project['lines'])+'\n')
             result = {'status': 'PROJECT_READY', 'sources': len(eligible),
                       'screenshots': len(project['visuals']), 'lines': len(project['lines']),
                       'provider': request['provider'], 'video_created': False}
         atomic_json(output/'preparation.json', result)
+        timing['status'] = result['status']
         return result
     except Exception as exc:
         atomic_json(output/'preparation.json', {'status': 'FAILED', 'error': type(exc).__name__})
         raise
+    finally:
+        timing.update(finished_utc=datetime.now(timezone.utc).isoformat(),
+                      total_seconds=round(time.monotonic()-started, 6))
+        atomic_json(output/'timing.json', timing)
 
 
 if __name__ == '__main__':
