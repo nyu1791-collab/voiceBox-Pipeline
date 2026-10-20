@@ -33,10 +33,14 @@
 - 動画workflowは `allow_script_api:true` と `script_provider:opencode` を必要とし、ZIP内のproviderとの一致も検証する。既存Gemini/Groqは `script_provider:request` のまま。提供台本ではLLMを呼ばない。
 - 手動の `OpenCode Free Connection` workflowと `tools/check_opencode.py` を追加。架空資料から短い台本を1回検証し、非秘密receiptだけ保存する。記事取得・撮影・音声・動画は実行しない。
 
-## 検証と残作業
+## 検証結果と現在の状態
 
 - 新規の18テストと既存のAPI許可テストが成功。無料ID制約、認証欠落、モデル不一致、不正JSON、ツール・再試行停止、プロセス終了、認証隔離、提供台本・none経路、動画側の明示選択を確認した。
-- GitHub Actionsの登録済みSecretを使う接続確認とCIは、実装コミット後に実行して結果を追記する。
+- 実装は `af5c6a75bdff06a600154a537b91fcb946236684` として `main` に反映済み。
+- 登録済みSecretを使った [GitHub Actions接続確認](https://github.com/nyu1791-collab/voiceBox-Pipeline/actions/runs/39407302165) は成功。2026-10-20 10:21 UTC、生成1回、両話者2台詞、JSON・資料ID・正常終了の検証成功、カタログ上のコスト0。接続確認処理は6.377秒。公式CLIは `1.19.0`。音声や動画の生成時間ではない。
+- 非秘密receiptを [Artifact](https://github.com/nyu1791-collab/voiceBox-Pipeline/actions/runs/39407302165/artifacts/12256878449) に保存済み。保存期間7日。トークン記録はinput 9524、output 126、reasoning 254、cache read 1664、total 11568。
+- [結合テストCI](https://github.com/nyu1791-collab/voiceBox-Pipeline/actions/runs/39407298708) も成功。`pytest` は新規18件を含め32件成功、テスト実行31.72秒。既存の本文取得・実ブラウザー撮影・字幕・メディア編集も通過した。
+- 接続とworkflow配線の未完了作業はない。本番テーマによる台本・全編動画の制作は別の入力を使う次の作業。
 - 今回は動画・音声・GPU・Colabを起動していない。有料fallback、外部への自動公開、APIキーの再登録・削除は行っていない。
 
 ## VM側の非秘密証跡
