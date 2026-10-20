@@ -1,0 +1,12 @@
+.venv/
+.cache/
+runtime.local.json
+runs/
+__pycache__/
+*.pyc
+*.log
+*.wav
+*.mp4
+*.zip
+*.key
+.env

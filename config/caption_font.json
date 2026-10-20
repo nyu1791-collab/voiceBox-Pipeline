@@ -1,0 +1,20 @@
+{
+  "_comment": "版（プロファイル）ごとの字幕の字体。描画（make_video.sh）と完成ゲート（qa_gate.py）は、ここから字体を読む（tools/caption_font.py）。ファイルが無い、または sha256 が違う時は止まる。Noto などへ黙って切り替えない。",
+  "profiles": {
+    "config/landscape_profile_v16.json": {
+      "font": "/usr/share/fonts/opentype/noto/NotoSansCJK-Regular.ttc",
+      "sha256": "b76b0433203017ca80401b2ee0dd69350349871c4b19d504c34dbdd80541690a",
+      "note": "v16 の承認済みの描画（out/FINAL の mp4 は 02:08 に作成。字体を直す前の版は Noto）。システムのフォントのため、リポジトリには入れない。"
+    },
+    "config/landscape_profile_v17.json": {
+      "font": "fonts/mplusrounded1c.ttf",
+      "sha256": "b75708b53e45b06d17d470aeeca5b766e3d1b3999f03f13ec4eb863ca846c14c",
+      "note": "決定 57（M PLUS Rounded 1c、依頼者の許可 2026-10-14）。fonts/ に同梱（OFL.txt、SOURCE.txt）。"
+    },
+    "config/landscape_profile_v18.json": {
+      "font": "fonts/ZenMaruGothic-Medium.ttf",
+      "sha256": "3cfdb98a13571ede17fcc769f5093a97c38b80a7b9b2ab754a26b4d822092b3b",
+      "note": "依頼者の指示（2026-10-14）：少し丸みのある字体（Zen Maru Gothic Medium、OFL）。字幕 36 px。献立も同じ字体。fonts/SOURCE_ZenMaruGothic.txt を参照。"
+    }
+  }
+}

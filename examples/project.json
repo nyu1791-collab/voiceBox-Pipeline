@@ -1,0 +1,89 @@
+{
+  "title": "ずんだもん動画・CPU10並列",
+  "visuals": [
+    {
+      "id": "parallel",
+      "file": "parallel.png",
+      "source_credit": "このリポジトリの説明図",
+      "source_label": "構成を示す模式図"
+    },
+    {
+      "id": "flow",
+      "file": "flow.png",
+      "source_credit": "このリポジトリの説明図",
+      "source_label": "構成を示す模式図"
+    }
+  ],
+  "lines": [
+    {
+      "id": 1,
+      "speaker": "ずんだもん",
+      "text": "ずんだもんと、めたんの動画を作るのだ。",
+      "emotion": "NORMAL",
+      "visual": "parallel"
+    },
+    {
+      "id": 2,
+      "speaker": "四国めたん",
+      "text": "今回は、すべてシーピーユーで動かすのね。",
+      "emotion": "NORMAL",
+      "visual": "parallel"
+    },
+    {
+      "id": 3,
+      "speaker": "ずんだもん",
+      "text": "音声エンジンは、十個を並列に使うのだ。",
+      "emotion": "HAPPY",
+      "visual": "parallel"
+    },
+    {
+      "id": 4,
+      "speaker": "四国めたん",
+      "text": "それぞれ別の台詞を、担当する仕組みよ。",
+      "emotion": "HAPPY",
+      "visual": "parallel"
+    },
+    {
+      "id": 5,
+      "speaker": "ずんだもん",
+      "text": "完成した順番ではなく、台本の順に並べるのだ。",
+      "emotion": "SERIOUS",
+      "visual": "parallel"
+    },
+    {
+      "id": 6,
+      "speaker": "四国めたん",
+      "text": "字幕の時刻は、実際の音声から決めるわ。",
+      "emotion": "SERIOUS",
+      "visual": "flow"
+    },
+    {
+      "id": 7,
+      "speaker": "ずんだもん",
+      "text": "表情と口の動きも、音声に合わせるのだ。",
+      "emotion": "SURPRISED",
+      "visual": "flow"
+    },
+    {
+      "id": 8,
+      "speaker": "四国めたん",
+      "text": "文字は丸い字体で、三行までに収めるのね。",
+      "emotion": "TROUBLED",
+      "visual": "flow"
+    },
+    {
+      "id": 9,
+      "speaker": "ずんだもん",
+      "text": "同じ音声は保存して、次回も使うのだ。",
+      "emotion": "HAPPY",
+      "visual": "flow"
+    },
+    {
+      "id": 10,
+      "speaker": "四国めたん",
+      "text": "これで動画の完成よ。早速、使ってみましょう。",
+      "emotion": "NORMAL",
+      "visual": "flow"
+    }
+  ]
+}

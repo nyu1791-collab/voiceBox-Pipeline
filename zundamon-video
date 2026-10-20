@@ -1,0 +1,11 @@
+#!/usr/bin/env bash
+set -euo pipefail
+ROOT="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
+if [[ -x "$ROOT/.venv/bin/python" ]]; then
+  PYTHON="$ROOT/.venv/bin/python"
+elif [[ -x /home/n_yu1791/news_v2_20261016/venv/bin/python ]]; then
+  PYTHON=/home/n_yu1791/news_v2_20261016/venv/bin/python
+else
+  PYTHON=python3
+fi
+exec "$PYTHON" "$ROOT/pipeline.py" "$@"
