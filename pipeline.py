@@ -136,6 +136,18 @@ def load_project(path):
         if visual.get('source_language') == 'en' and (
                 not isinstance(visual.get('translation'), str) or not visual['translation'].strip()):
             raise ValueError('English evidence requires a Japanese translation')
+        if visual.get('kind') in ('evidence_screenshot','source_context','figure'):
+            from datetime import datetime
+            import re
+            digest = visual.get('sha256','')
+            if not isinstance(digest,str) or not re.fullmatch('[a-f0-9]{64}',digest):
+                raise ValueError('Captured evidence needs an original SHA-256')
+            if not str(visual.get('source_url','')).startswith('https://') or not visual.get('captured_utc'):
+                raise ValueError('Captured evidence needs its HTTPS source and capture time')
+            datetime.fromisoformat(visual['captured_utc'].replace('Z','+00:00'))
+            source = (path.parent / visual['file']).resolve()
+            if sha256(source) != digest:
+                raise ValueError('Captured evidence file SHA-256 mismatch')
         prepared = prepare_visual(visual, path.parent, ROOT / ".cache/edited-assets")
         visual.clear()
         visual.update(prepared)
@@ -166,6 +178,8 @@ def load_project(path):
         audio['transition_se'] = resolve_cue(audio['transition_se'])
     if audio.get('chapter_se'):
         audio['chapter_se'] = resolve_cue(audio['chapter_se'])
+    from renderer.evidence_shots import validate_shots
+    validate_shots(project)
     from renderer.production_cues import attach_motion
     attach_motion(project, None, {}, None)
     return project
@@ -272,6 +286,11 @@ def prepare_audio(project, runtime, out, engine_sha):
 
 def render(project, runtime, out, records):
     started = time.monotonic()
+    from renderer.evidence_shots import compile_shots
+    from renderer.production_cues import compile_direction
+    direction = compile_direction(project, records)
+    hidden = [(w["start"],w["end"]) for w in direction["overview"]]
+    evidence_timeline = compile_shots(project, records, hidden)
     effects = sound_effects(project, records)
     profile = read_json(ROOT / "config/landscape_profile_v18.json")
     output_width, output_height = profile['output']['width'], profile['output']['height']
@@ -292,9 +311,15 @@ def render(project, runtime, out, records):
         "source_url": visuals[0]["source_url"], "visuals": visuals, "sections": sections}
     from renderer.production_cues import compile_direction, attach_motion, validate_direction_layout
     validate_direction_layout(project,runtime['font'])
-    presentation['production_cues'] = compile_direction(project, records)
+    presentation['production_cues'] = direction
+    presentation['evidence_timeline'] = evidence_timeline
+    presentation['evidence_shots'] = project.get('evidence_shots',[])
     attach_motion(project, records, presentation, out)
+    hidden += [(d['start'],d['end']) for d in presentation.get('motion_diagrams',{}).get('diagrams',[])]
+    evidence_timeline = compile_shots(project,records,hidden)
+    presentation['evidence_timeline'] = evidence_timeline
     atomic_json(out / "presentation.json", presentation)
+    atomic_json(out / "evidence-timeline.json", evidence_timeline)
     (out/'chapters.txt').write_text('\n'.join(
         f"{int(c['start'])//60:02d}:{int(c['start'])%60:02d} 第{c['index']}章 {c['title']}"
         for c in presentation['production_cues']['chapters'])+'\n')
@@ -334,6 +359,8 @@ def execute(args):
     project = load_project(project_path)
     from renderer.production_cues import validate_direction_layout
     validate_direction_layout(project,runtime['font'])
+    from renderer.evidence_translation import TranslationCards
+    TranslationCards(project["visuals"], read_json(ROOT / "config/landscape_profile_v18.json")["layout"], runtime["font"])
     fingerprint_started = time.monotonic()
     engine_sha = engine_fingerprint(runtime["engine_dir"], engine_fingerprint_cache(runtime["engine_dir"]))
     shell = Path(runtime["shell"])

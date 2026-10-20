@@ -101,7 +101,12 @@
     "caption_tab_gap": 4,
     "caption_tab_font_size": 22,
     "band_font_size": 20,
-    "summary_font_size": 22
+    "summary_font_size": 22,
+    "evidence_translation": {
+      "mode": "full",
+      "font_size": 24,
+      "min_font_size": 20
+    }
   },
   "acting": {
     "native_layers_required": true,
@@ -148,8 +153,8 @@
     "reason": "USER_REQUESTED_360P_24_FPS_OUTPUT",
     "visual_beat_seconds": 10,
     "visual_entry_seconds": 0.45,
-    "visual_nudge_seconds": 2.5,
-    "visual_nudge_scale": 0.02,
+    "visual_nudge_seconds": 0,
+    "visual_nudge_scale": 0,
     "agenda_supersample": 4,
     "voicevox_isolated_cpu_engines": 10
   },

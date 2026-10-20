@@ -190,6 +190,9 @@ def sound_effects(project, records):
             raise ValueError('SE records need finite positive dialogue intervals')
     previous_visual = None
     transition = project.get('audio', {}).get('transition_se')
+    authored_transition = transition
+    if project.get('evidence_shots'):
+        transition = None
     chapter_cue = project.get('audio', {}).get('chapter_se')
     previous_section = None
     last_transition = -math.inf
@@ -217,7 +220,17 @@ def sound_effects(project, records):
                 raise ValueError('SE offset must fall inside its spoken line')
             result.append({**cue, 'start': timing['start']+offset,
                            'duration': min(float(cue.get('duration', 1)), timing['end']-timing['start']-offset)})
-    return result
+    if project.get('evidence_shots') and authored_transition:
+        from renderer.evidence_shots import compile_shots
+        shots = compile_shots(project,records)
+        for shot in shots[1:]:
+            start = shot['start']
+            if any(abs(c['start']-start)<gap for c in result):
+                continue
+            cue = {'file':authored_transition} if isinstance(authored_transition,str) else dict(authored_transition)
+            cue.pop('offset',None)
+            result.append({**cue,'start':start,'duration':min(float(cue.get('duration',1)),shot['end']-start)})
+    return sorted(result,key=lambda c:c['start'])
 
 
 def make_thumbnail(video, destination, title, font):

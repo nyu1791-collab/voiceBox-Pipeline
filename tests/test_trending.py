@@ -71,7 +71,7 @@ def test_only_captured_paragraphs_reach_one_model_call(tmp_path, monkeypatch, ca
         Image.new('RGB', (400, 100)).save(output/'proof.png')
         return [{'id': row['id'], 'captured_utc': '2026-10-20T00:00:00Z',
                  'crops': [{'name': 'paragraph-1', 'found': capture_success,
-                            'file': 'proof.png', 'sha256': 'test-hash'}]}]
+                            'file': 'proof.png', 'sha256': __import__('hashlib').sha256((output/'proof.png').read_bytes()).hexdigest()}]}]
     def generate(prompt, *args, **kwargs):
         events.append('generate')
         data = json.loads(prompt['user'])

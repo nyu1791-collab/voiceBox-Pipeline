@@ -93,11 +93,11 @@ def evidence_targets(sources):
         paragraphs = []
         for raw in row['text'].splitlines():
             text = re.sub(r'^[-•]\s+', '', raw.strip())
-            if (80 <= len(text) <= 600 and text not in paragraphs
+            if (80 <= len(text) <= 480 and text not in paragraphs
                     and not re.search(r'subscribe|newsletter|sign up|features on AI-assisted discoveries|'
                                       r'get updates on|メルマガ|ニュースレター', text, re.I)):
                 paragraphs.append(text)
-        paragraphs = paragraphs[:3]
+        paragraphs = paragraphs[:4]
         crops = []
         for index, text in enumerate(paragraphs, 1):
             name = f'paragraph-{index}'
@@ -127,6 +127,9 @@ def bind_evidence(script, pack, evidence):
     for eid in used:
         if not isinstance(translations.get(eid), str) or not translations[eid].strip():
             raise ValueError('Missing evidence translation: ' + eid)
+    for shot in project.get('evidence_shots',[]):
+        if shot.get('visual') not in used:
+            raise ValueError('Evidence shots must use a photographed paragraph referenced by dialogue')
     project['visuals'] = [{**by_id[eid]['visual'], 'translation': translations[eid]}
                           for eid in sorted(used)]
     return project
@@ -175,7 +178,7 @@ def prepare_trending(request, output, *, allow_api=False, executable_path=None):
             if captured.get('error') or not crop.get('found'):
                 continue
             source = next(s for s in sources if s['id'] == item['source_id'])
-            item['visual'] = {'id': item['id'], 'file': 'materials/'+crop['file'],
+            item['visual'] = {'id': item['id'], 'kind': 'evidence_screenshot', 'file': 'materials/'+crop['file'],
                 'source_url': item['source_url'], 'source_credit': source['title'],
                 'captured_utc': captured['captured_utc'], 'sha256': crop['sha256'],
                 'evidence_text': item['text'], 'source_id': source['id'],
@@ -202,6 +205,13 @@ def prepare_trending(request, output, *, allow_api=False, executable_path=None):
             '冒頭はめたんが各章の要点を短く案内し、その台詞にdisplay:"overview"を付ける。'
             '各章の冒頭で「第何章か」とテーマを自然に伝える。'
             'めたんの解説は意味のまとまりを保ち、ずんだもんは適切な節目で質問する。')
+        prompt['system'] += (' 根拠画像の訳文は小さめの文字で全文を一括表示し、ページ切替はしない。'
+            '各撮影段落の訳は原則200字以内で全文が収まる長さの資料を選ぶ。意味を省略して短縮しない。'
+            '同じ根拠を質問と複数の解説台詞で連続して扱い、短い質問だけ別画像へ戻さない。'
+            'evidence_shotsに[{"visual":"使用したevidence_id","start_line_id":切替を始める台詞ID}]を返す。'
+            '先頭は台詞1。画像の切替は話者交代から独立し、本文画像1枚あたり8秒以上・目安10〜16秒となる説明量を割り当てる。'
+            '秒数は合成後に実測確認する。同じ記事内の連続説明をまとめ、別記事の画像で説明しない。'
+            'あらすじ表や図表で隠れている時間を画像の読了時間に含めない。')
         prompt['system'] += (' 図表が理解に役立つ章では任意のexplainersを付けられる。'
             '形式:[{"id":"diagram1","scene_id":"chapter1","title":"短い題名",'
             '"template":"rows","elements":[{"id":"item1","line_id":台詞ID,"label":"台詞の連続した一部分"},'

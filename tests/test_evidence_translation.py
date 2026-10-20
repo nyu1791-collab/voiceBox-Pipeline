@@ -10,29 +10,29 @@ from renderer.evidence_translation import TranslationCards
 FONT = '/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf'
 
 
-def test_long_translation_pages_preserve_every_character_and_stay_below_source():
-    text = '実験的な機能であり、標準ビルドとは異なります。' * 20
+def test_full_translation_is_stable_and_source_moves_above_it():
+    text = '実験的な機能であり、標準ビルドとは異なります。' * 10
     cards = TranslationCards([{'id': 'a', 'translation': text}],
                              {'zones': {'evidence': [225, 92, 1055, 350]}}, FONT)
-    assert len(cards.pages['a']) > 1
-    assert ''.join(line for page in cards.pages['a'] for line in page) == text
-    assert all(len(page) <= 3 and all(cards.font.getlength(line) <= 802 for line in page)
-               for page in cards.pages['a'])
-    assert cards.state('a', 0, 10) == ('a', 0)
-    assert cards.state('a', 10, 10) == ('a', len(cards.pages['a'])-1)
+    plan = cards.plans['a']
+    assert len(cards.pages['a']) == 1
+    assert ''.join(plan['lines']) == text
+    assert 20 <= plan['font'].size <= 24
+    assert all(plan['font'].getlength(line) <= 802 for line in plan['lines'])
+    assert cards.state('a', 0, 1) == cards.state('a', 100, 1) == ('a',0)
     assert cards.state('untranslated', 0, 10) is None
+    assert plan['evidence_region'][3]+8 == plan['xy'][1]
     frame = Image.new('RGB', (1280, 720), 'green')
     before = frame.copy()
-    cards.draw(frame, cards.state('a', 0, 10))
-    assert frame.crop((0, 0, 1280, 350)).tobytes() == before.crop((0, 0, 1280, 350)).tobytes()
+    cards.draw(frame, cards.state('a'))
     assert frame.crop((0, 490, 1280, 720)).tobytes() == before.crop((0, 490, 1280, 720)).tobytes()
-    assert frame.getpixel((240, 370)) != before.getpixel((240, 370))
+    assert frame.crop((225,plan['xy'][1],1055,490)).tobytes() != before.crop((225,plan['xy'][1],1055,490)).tobytes()
 
 
-def test_translation_never_silently_overlaps_captions():
-    with pytest.raises(ValueError, match='Leave room'):
-        TranslationCards([{'id': 'a', 'translation': '日本語訳。'}],
-                         {'zones': {'evidence': [225, 92, 1055, 400]}}, FONT)
+def test_oversize_translation_requires_shorter_evidence_instead_of_fast_pages():
+    with pytest.raises(ValueError, match='shorter source excerpt'):
+        TranslationCards([{'id': 'a', 'translation': '日本語訳を省略せず保持する。'*100}],
+                         {'zones': {'evidence': [225, 92, 1055, 350]}}, FONT)
 
 
 @pytest.mark.parametrize('translation', [None, '', '   '])

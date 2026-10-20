@@ -200,7 +200,7 @@ def draw_summary_block(d,layout,font_path,item):
     _sf=_font(str(font_path),int(layout.get("summary_font_size",22)))
     for _i,_ln in enumerate(_sum): d.text((_sx1+14,_sy1+2+_i*SUMMARY_LINE_H),_ln,font=_sf,fill="#17202F")
 
-def build_backgrounds(profile, presentation, presentation_path, font_path):
+def build_backgrounds(profile, presentation, presentation_path, font_path, translation_cards=None):
     layout=profile["layout"]; W,H=layout["width"],layout["height"]
     title_font=_font(str(font_path),layout["title_font_size"])
     small=_font(str(font_path),layout["source_font_size"])
@@ -228,7 +228,7 @@ def build_backgrounds(profile, presentation, presentation_path, font_path):
         _tp=tuple(_tx) if _tx else tuple(zones["title"])
         d.text(_tp,heading,font=title_font,fill=layout.get("header_text_color","#FFFFFF"),**({"anchor":"lm"} if _tx else {}))
 
-        ex1,ey1,ex2,ey2=zones["evidence"]
+        ex1,ey1,ex2,ey2=(translation_cards.evidence_region(item["id"]) if translation_cards else zones["evidence"])
         d.rounded_rectangle((ex1,ey1,ex2,ey2),radius=22,fill=layout["evidence_panel"],outline="#C9D5E3",width=2)
         visual=_contained_visual(str(src),ex2-ex1-34,ey2-ey1-34).copy()
         bg.paste(visual,(ex1+(ex2-ex1-visual.width)//2,ey1+(ey2-ey1-visual.height)//2))
@@ -534,16 +534,17 @@ def draw_chapter_card(card, elapsed, cfg, font_path, W, H):
         put_char("四国めたん", "right", clamp(e / 0.3), -12 * abs(math.sin(e * 8 + 0.8)) * (1 if e < 1.2 else 0), clamp(e / 0.15))
     return base.convert("RGB")
 
-def build_visual_layers(profile, presentation, presentation_path, font_path):
+def build_visual_layers(profile, presentation, presentation_path, font_path, translation_cards=None):
     """場面ごとに、板（背景・見出し・声の表示）と、図の枠（白い枠と図）を分けて作る（v20）。枠だけを動かすため。
     枠の位置と大きさは従来の描画と同じ。戻り値は {場面 id: (板, 枠の RGBA, (x, y))}。"""
     layout=profile["layout"]; W,H=layout["width"],layout["height"]
     title_font=_font(str(font_path),layout["title_font_size"])
     small=_font(str(font_path),layout["source_font_size"])
     zones=layout["zones"]; ex1,ey1,ex2,ey2=zones["evidence"]
-    pw,ph=ex2-ex1+1,ey2-ey1+1
     out={}
     for item in (presentation.get("visuals") or [presentation]):
+        ex1,ey1,ex2,ey2=(translation_cards.evidence_region(item["id"]) if translation_cards else zones["evidence"])
+        pw,ph=ex2-ex1+1,ey2-ey1+1
         src=Path(item["file"])
         if not src.is_absolute(): src=presentation_path.parent/src
         bg=(_resized_bg(layout["background_image"],W,H).copy() if layout.get("background_image") else Image.new("RGB",(W,H),layout["background"]))
@@ -643,11 +644,12 @@ def render(args):
         variants[speaker],char_keys[speaker]=character_variants(args.shell/char,char,args.cache_root or args.output.parent/"reusable-assets")
         _CARD_CHARS[speaker]=_prep_card_char(variants[speaker])
 
-    backgrounds,visual_hashes=build_backgrounds(profile,presentation,args.presentation,args.font)
+    translation_cards = TranslationCards(presentation.get("visuals", []), layout, args.font)
+    backgrounds,visual_hashes=build_backgrounds(profile,presentation,args.presentation,args.font,translation_cards)
     default_visual=next(iter(backgrounds))
     perf_cfg=profile.get("performance") or {}
     layered=bool(perf_cfg.get("visual_entry_seconds"))  # v20（2026-10-16）：入りの動きと章カード。値が無い版は従来の描画のまま
-    layers=build_visual_layers(profile,presentation,args.presentation,args.font) if layered else None
+    layers=build_visual_layers(profile,presentation,args.presentation,args.font,translation_cards) if layered else None
     motion_timeline=verified_motion_timeline or {}
     chapter_cards=presentation.get("chapter_cards") or []
     production_cues=presentation.get('production_cues') or {}
@@ -699,7 +701,16 @@ def render(args):
              "-ss",str(args.start),"-i",str(args.audio),"-vf","scale=640:360:flags=lanczos","-c:v","libx264","-preset","medium","-threads","2","-b:v","144k","-maxrate","168k","-bufsize","288k","-pix_fmt","yuv420p",
              "-af",audio_filter,"-c:a","aac","-b:a","48k","-ar","48000","-movflags","+faststart","-shortest",str(out)]
     character_positions={}; character_frame_evidence={}
-    translation_cards = TranslationCards(presentation.get("visuals", []), layout, args.font)
+    from evidence_shots import shot_at, compile_shots
+    shot_project = {'lines':[{'id':x['id'],'visual':x.get('visual_id',default_visual),
+                             'section':x.get('scene_id','main')} for x in timing['records']],
+                    'visuals':presentation.get('visuals',[]),
+                    'evidence_shots':presentation.get('evidence_shots',[])}
+    hidden = [(w['start'],w['end']) for w in production_cues.get('overview',[])]
+    hidden += [(d['start'],d['end']) for d in motion_timeline.get('diagrams',[])]
+    evidence_timeline = compile_shots(shot_project,timing['records'],hidden)
+    if evidence_timeline != presentation.get('evidence_timeline',[]):
+        raise ValueError('Screenshot timeline differs from measured speech')
     video_panels = VideoPanels(presentation.get("visuals", []))
     with closing(video_panels), encoder_process(cmd, flush_timeout=None) as process:
 
@@ -736,10 +747,14 @@ def render(args):
                 continue
             candidate=records[record_idx] if record_idx<len(records) else None
             r=candidate if candidate and candidate["start"]<=t<candidate["end"] else None
-            if r:
+            if r and not evidence_timeline:
                 _vid=r.get("visual_id",default_visual)
                 if _vid!=current_visual: visual_started=t
                 current_visual=_vid
+            shot = shot_at(evidence_timeline,t+args.start)
+            if shot is not None:
+                current_visual=shot["visual"]
+                visual_started=shot["start"]-args.start
             speaker=r["speaker"] if r else None
             expression=r.get("emotion","NORMAL") if r else "NORMAL"
 
@@ -889,6 +904,8 @@ def render(args):
     report={
       "preview_only":bool(getattr(args, "preview", False)),
       "preflight":render_preflight,
+      "translations":translation_cards.report(),
+      "evidence_timeline":evidence_timeline,
       "duration":args.duration,"canvas":[W,H],"orientation":"LANDSCAPE_16_9",
       "mouth_states":{k:sorted(v) for k,v in mouth_seen.items()},
       "expressions":{k:sorted(v) for k,v in expr_seen.items()},
