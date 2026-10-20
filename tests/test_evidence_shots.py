@@ -49,3 +49,19 @@ def test_transition_sound_matches_actual_fractional_screenshot_switch():
     p,r=example();p['evidence_shots'][1]['start_fraction']=.5
     p['audio']={'transition_se':{'file':'change.wav','duration':.4},'transition_min_gap':5}
     assert sound_effects(p,r)==[{'file':'change.wav','duration':.4,'start':9.5}]
+
+
+def test_captured_evidence_rejects_changed_pixels(tmp_path):
+    import json,hashlib
+    from PIL import Image
+    from pipeline import load_project
+    image=tmp_path/'source.png';Image.new('RGB',(50,20),'white').save(image)
+    project={'title':'source','lines':[{'id':1,'speaker':'ずんだもん','text':'資料なのだ。'}],
+        'visuals':[{'id':'a','kind':'evidence_screenshot','file':'source.png',
+        'source_url':'https://official.test/article','captured_utc':'2026-10-20T00:00:00Z',
+        'sha256':hashlib.sha256(image.read_bytes()).hexdigest()}]}
+    path=tmp_path/'project.json';path.write_text(json.dumps(project))
+    load_project(path)
+    Image.new('RGB',(50,20),'black').save(image)
+    with pytest.raises(ValueError,match='SHA-256 mismatch'):
+        load_project(path)

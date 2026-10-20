@@ -144,7 +144,9 @@ def load_project(path):
                 raise ValueError('Captured evidence needs an original SHA-256')
             if not str(visual.get('source_url','')).startswith('https://') or not visual.get('captured_utc'):
                 raise ValueError('Captured evidence needs its HTTPS source and capture time')
-            datetime.fromisoformat(visual['captured_utc'].replace('Z','+00:00'))
+            stamp = datetime.fromisoformat(visual['captured_utc'].replace('Z','+00:00'))
+            if stamp.tzinfo is None or stamp.utcoffset().total_seconds() != 0:
+                raise ValueError('Capture time must identify UTC')
             source = (path.parent / visual['file']).resolve()
             if sha256(source) != digest:
                 raise ValueError('Captured evidence file SHA-256 mismatch')

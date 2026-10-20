@@ -127,6 +127,8 @@ def bind_evidence(script, pack, evidence):
     for eid in used:
         if not isinstance(translations.get(eid), str) or not translations[eid].strip():
             raise ValueError('Missing evidence translation: ' + eid)
+    if not project.get('evidence_shots'):
+        raise ValueError('New evidence-first scripts require an evidence_shots reading plan')
     for shot in project.get('evidence_shots',[]):
         if shot.get('visual') not in used:
             raise ValueError('Evidence shots must use a photographed paragraph referenced by dialogue')
@@ -208,6 +210,7 @@ def prepare_trending(request, output, *, allow_api=False, executable_path=None):
         prompt['system'] += (' 根拠画像の訳文は小さめの文字で全文を一括表示し、ページ切替はしない。'
             '各撮影段落の訳は原則200字以内で全文が収まる長さの資料を選ぶ。意味を省略して短縮しない。'
             '同じ根拠を質問と複数の解説台詞で連続して扱い、短い質問だけ別画像へ戻さない。'
+            '「撮影した段落」など制作工程の言葉は台詞に入れず、「今回の引用で確認できる範囲」と自然に説明する。'
             'evidence_shotsに[{"visual":"使用したevidence_id","start_line_id":切替を始める台詞ID}]を返す。'
             '先頭は台詞1。画像の切替は話者交代から独立し、本文画像1枚あたり8秒以上・目安10〜16秒となる説明量を割り当てる。'
             '秒数は合成後に実測確認する。同じ記事内の連続説明をまとめ、別記事の画像で説明しない。'

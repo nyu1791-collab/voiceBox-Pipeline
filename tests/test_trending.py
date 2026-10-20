@@ -78,6 +78,7 @@ def test_only_captured_paragraphs_reach_one_model_call(tmp_path, monkeypatch, ca
         assert data['sources'][0]['text'] == row['text'].strip()
         eid = data['evidence'][0]['id']
         return {'title': 'news', 'translations': {eid: '新機能についての公式の説明です。'},
+                'evidence_shots':[{'visual':eid,'start_line_id':1}],
                 'lines': [{'id': i, 'speaker': speaker, 'text': text, 'source_id': row['id'],
                            'evidence_id': eid} for i, speaker, text in [
                                (1,'ずんだもん','新機能なのだ。'), (2,'四国めたん','公式の説明よ。')]]}
