@@ -98,7 +98,7 @@ def setup(args):
     from PIL import ImageFont
     ImageFont.truetype(values["font"], 36)
     atomic_json(ROOT / "runtime.local.json", values)
-    print("READY: CPU VOICEVOX × 10 / approved native parts / 1280×720", flush=True)
+    print("READY: CPU VOICEVOX × 10 / approved native parts", flush=True)
 
 
 def load_project(path):
@@ -260,6 +260,7 @@ def prepare_audio(project, runtime, out, engine_sha):
 def render(project, runtime, out, records):
     started = time.monotonic()
     profile = read_json(ROOT / "config/landscape_profile_v18.json")
+    output_width, output_height = profile['output']['width'], profile['output']['height']
     profile["layout"]["background_image"] = runtime["background"]
     atomic_json(out / "profile.json", profile)
     write_subtitles(records, runtime['font'], profile['layout'], out)
@@ -276,10 +277,10 @@ def render(project, runtime, out, records):
         "source_url": visuals[0]["source_url"], "visuals": visuals, "sections": sections}
     atomic_json(out / "presentation.json", presentation)
     env = dict(os.environ, VIDEO_REVIEW_MODE="batch", DIRECT_ENCODE="1", OUT_CRF="20",
-               OUT_VF="scale=1280:720:flags=lanczos", OUT_PRESET="veryfast", DIRECT_THREADS="4",
+               OUT_VF=f"scale={output_width}:{output_height}:flags=lanczos", OUT_PRESET="veryfast", DIRECT_THREADS="4",
                CUDA_VISIBLE_DEVICES="-1")
     temporary = out / ("silent-" + uuid.uuid4().hex + ".mp4")
-    print("RENDER: 1280×720 / 30fps / CRF20 / native expressions and mouth", flush=True)
+    print(f"RENDER: {output_width}×{output_height} / {profile['layout']['fps']}fps / veryfast / CRF20 / native expressions and mouth", flush=True)
     run_command([sys.executable, str(ROOT / "renderer/render_reusable_landscape_raw.py"),
         "--audio", str(out / "narration.wav"), "--timing", str(out / "timing.json"),
         "--presentation", str(out / "presentation.json"), "--profile", str(out / "profile.json"),
