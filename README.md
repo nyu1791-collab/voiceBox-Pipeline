@@ -124,3 +124,7 @@ OpenCodeの場合は、動画workflowでも `script_provider:opencode` を明示
 BGMは `audio.bgm` のローカル音源を使用し、`bgm_gain_db`（既定−24dB）、`ducking`（既定true）、`bgm_fade_seconds`（既定1.5秒）で調整します。配布元のライセンスと必要なクレジットは作品の概要欄に保持してください。音声結合は映像をコピーし、最後のフレームまで保持します。
 
 現行工程・検証済み完成物・既存音声の再利用・未実装範囲は、[動画制作の詳細移行文](docs/MIGRATION_VIDEO_WORKFLOW_20261020.md)を参照してください。
+
+## GeminiからのGitHub変更提案
+
+Gemini APIに変更案を作らせ、レビュー用のdraft PRを作る手順は [Gemini GitHub bridge](docs/GEMINI_GITHUB_BRIDGE.md) を参照してください。Geminiアプリへの直接書き込み権限ではなく、GitHub Actionsの限定権限を使います。
