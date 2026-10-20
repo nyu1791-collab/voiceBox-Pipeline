@@ -19,6 +19,7 @@ import uuid
 import wave
 
 from engine_pool import EnginePool, WORKERS, engine_fingerprint
+from media_editing import prepare_visual, mux_audio
 
 ROOT = Path(__file__).resolve().parent
 SPEAKERS = {"ずんだもん": 3, "四国めたん": 2}
@@ -126,13 +127,18 @@ def load_project(path):
         if not visual.get("id") or visual["id"] in visual_ids:
             raise ValueError("visual ids must be unique")
         visual_ids.add(visual["id"])
-        visual["file"] = str((path.parent / visual["file"]).resolve())
-        if not Path(visual["file"]).is_file():
-            raise FileNotFoundError(visual["file"])
+        prepared = prepare_visual(visual, path.parent, ROOT / ".cache/edited-assets")
+        visual.clear()
+        visual.update(prepared)
     for row in lines:
         row.setdefault("visual", visuals[0]["id"])
         if row["visual"] not in visual_ids:
             raise ValueError(f"Unknown visual in line {row['id']}")
+    audio = project.get("audio", {})
+    if audio.get("bgm"):
+        audio["bgm"] = str((path.parent / audio["bgm"]).resolve())
+        if not Path(audio["bgm"]).is_file():
+            raise FileNotFoundError(audio["bgm"])
     return project
 
 
@@ -263,11 +269,7 @@ def render(project, runtime, out, records):
         "--cache-root", str(ROOT / ".cache/characters"), "--output", str(temporary)],
         env=env, log=out / "render.log")
     final_temp = out / ("final-" + uuid.uuid4().hex + ".mp4")
-    command = ["ffmpeg", "-v", "error", "-nostdin", "-i", str(temporary), "-i", str(out / "narration.wav"),
-        "-map", "0:v:0", "-map", "1:a:0", "-c:v", "copy", "-af",
-        "volume=6.5dB,alimiter=limit=0.78:level=disabled", "-c:a", "aac", "-b:a", "128k",
-        "-ar", "48000", "-ac", "1", "-movflags", "+faststart", "-shortest", str(final_temp)]
-    run_command(command, log=out / "mux.log")
+    mux_audio(temporary, out / "narration.wav", final_temp, project.get("audio"))
     if (out / "video.mp4").exists():
         raise FileExistsError("Will not replace an existing video.mp4")
     final_temp.replace(out / "video.mp4")
@@ -293,7 +295,10 @@ def execute(args):
     fingerprint_seconds = round(time.monotonic() - fingerprint_started, 3)
     implementation = {str(p.relative_to(ROOT)): sha256(p) for directory in (ROOT, ROOT / "renderer", ROOT / "config")
                       for p in directory.iterdir() if p.is_file() and p.suffix in (".py", ".json") and p.name != "runtime.local.json"}
-    input_key = json_digest({"project": project, "assets": {v["file"]: sha256(v["file"]) for v in project["visuals"]},
+    asset_files = [v["file"] for v in project["visuals"]] + [v["video_file"] for v in project["visuals"] if v.get("video_file")]
+    if project.get("audio", {}).get("bgm"):
+        asset_files.append(project["audio"]["bgm"])
+    input_key = json_digest({"project": project, "assets": {p: sha256(p) for p in asset_files},
         "font": sha256(runtime["font"]), "background": sha256(runtime["background"]),
         "engine": engine_sha, "shell": shell_sha, "implementation": implementation})
     out.mkdir(parents=True, exist_ok=True)

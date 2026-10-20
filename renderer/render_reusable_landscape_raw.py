@@ -9,6 +9,9 @@ from pathlib import Path
 import os
 import sys
 sys.path.insert(0, str(Path(__file__).resolve().parent))
+sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
+from contextlib import closing
+from media_editing import VideoPanels
 from motion_diagrams import bound_timeline, active_diagram, cache_state as motion_cache_state, render_panel as render_motion_panel
 import argparse, hashlib, json, math, re, signal, wave, time
 from collections import OrderedDict
@@ -701,7 +704,8 @@ def render(args):
              "-ss",str(args.start),"-i",str(args.audio),"-vf","scale=640:360:flags=lanczos","-c:v","libx264","-preset","medium","-threads","2","-b:v","144k","-maxrate","168k","-bufsize","288k","-pix_fmt","yuv420p",
              "-af",audio_filter,"-c:a","aac","-b:a","48k","-ar","48000","-movflags","+faststart","-shortest",str(out)]
     character_positions={}; character_frame_evidence={}
-    with encoder_process(cmd, flush_timeout=None) as process:  # 終了待ちに上限を置かない（描画が終わるまで待つ）
+    video_panels = VideoPanels(presentation.get("visuals", []))
+    with closing(video_panels), encoder_process(cmd, flush_timeout=None) as process:
 
         resized={}; mouth_seen={k:set() for k in variants}; expr_seen={k:set() for k in variants}
         performance=profile.get("performance") or {}
@@ -788,6 +792,8 @@ def render(args):
             sb_pose=sidebar_pose(t+args.start,sb_scene) if sb_scene is not None else None
             frame_key=(beat_key,speaker,expression,mouth,caption,tuple((x[0],x[2],x[3],x[4]) for x in char_states),bump,sb_scene,sb_pose)
             frame_key += (motion_cache_state(motion_timeline,t+args.start,FPS),)
+            if current_visual in video_panels.paths:
+                frame_key += (i,)
             cached=frame_cache.get(frame_key)
             if cached is not None:
                 cache_hits += 1
@@ -799,6 +805,15 @@ def render(args):
             if layered:
                 frame=layers[current_visual][0].copy()
                 _pimg,_pxy=panel_for(layers,current_visual,beat_key[1],beat_key[2],panel_cache)
+                video_frame = video_panels.frame(current_visual, t-visual_started)
+                if video_frame is not None:
+                    panel = layers[current_visual][1].copy()
+                    picture = ImageOps.contain(video_frame, (panel.width-34, panel.height-34), Image.Resampling.LANCZOS)
+                    panel.paste(picture, ((panel.width-picture.width)//2, (panel.height-picture.height)//2))
+                    scale, alpha = beat_key[1], beat_key[2]
+                    _pimg = panel.resize((max(1,round(panel.width*scale)),max(1,round(panel.height*scale))), Image.Resampling.LANCZOS)
+                    if alpha < 1:
+                        _pimg.putalpha(_pimg.getchannel("A").point(lambda value:int(value*alpha)))
                 frame.paste(_pimg,_pxy,_pimg); d=ImageDraw.Draw(frame)
             else:
                 frame=backgrounds[beat_key].copy(); d=ImageDraw.Draw(frame)
@@ -887,6 +902,7 @@ def render(args):
       "visual_motion":{"layered":layered,"entry_seconds":perf_cfg.get("visual_entry_seconds"),"nudge_every_seconds":perf_cfg.get("visual_beat_seconds"),"nudge_seconds":perf_cfg.get("visual_nudge_seconds"),"nudge_scale":perf_cfg.get("visual_nudge_scale")},
       "chapter_cards":{"count":len(chapter_cards),"frames_drawn":cards_drawn,"windows":[[c["start"],c["end"]] for c in chapter_cards]},
       "mouth_update_hz":mouth_hz,
+      "moviepy_video_visuals":len(video_panels.paths),
       "frame_state_cache":{"limit":cache_limit,"hits":cache_hits,"misses":cache_misses},
       "render_wall_seconds":round(time.monotonic()-render_started,3),
       "render_realtime_factor":round(args.duration/max(0.001,time.monotonic()-render_started),3)

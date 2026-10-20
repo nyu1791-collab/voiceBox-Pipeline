@@ -4,9 +4,10 @@
 
 ## 全体を把握する
 
-`project.jsonと画像 → CPU版VOICEVOX10並列 → 実時刻・字幕・立ち絵 → CPU描画とFFmpeg → video.mp4`
+`提供ZIP（ランナー一時領域） → CPU版VOICEVOX10並列 → 実時刻・字幕・立ち絵・動画編集 → MP4をArtifactsへ`
 
-- 入口は `./zundamon-video`、本体 `pipeline.py`、音声管理 `engine_pool.py`、描画は `renderer/render_reusable_landscape_raw.py`、見た目は `config/landscape_profile_v18.json`。
+- GitHub側の入口は `.github/workflows/voicevox-cpu-video.yml`。公式CPU配布の取得・キャッシュ・音声生成・MP4保存をランナー上で実行する。台本・原素材は提供ZIPから一時領域へ展開し、Gitへコミットしない。共有キャッシュは公式エンジンと公式フォントだけ。
+- ローカルの入口は `./zundamon-video`、本体 `pipeline.py`、音声管理 `engine_pool.py`、描画は `renderer/render_reusable_landscape_raw.py`、見た目は `config/landscape_profile_v18.json`。
 - `setup` は既存資産の場所を `runtime.local.json` に登録する初回処理。制作は `run project.json --out 新しい出力先` 一回で最後まで進める。
 - `state.json` で現在工程を見る。`AUDIO → RENDER → COMPLETE`。実エラーは `FAILED` と原因を残す。失敗を成功と書かない。
 
@@ -24,7 +25,7 @@
 - 1280×720・30fps、黒板、Zen Maru Gothic Medium 36px、最大3行。本文を落とさず長い字幕は時間分割する。話者色は緑と桃。映像内と概要欄にVOICEVOX表記を出す。
 - 承認済みのずんだもん・めたんの正規パーツを使う。表情は台詞IDの明示キュー。RMS窓0.03秒、閉口閾値0.014、大開き0.07。聞き手と無音は閉口。元の口へ別の口を描き足さない。
 - 喜びは4秒で通常へ戻す。話す側285px、聞く側260px・不透明度0.5。喋り始めの既存の弾みを保つ。音声は既存のgain6.5dBとlimiter0.78、level=disabled。
-- 映像符号化は一回。最終音声結合で映像は再符号化しない。外部編集ツールは必要な時だけ追加し、複数の描画を同時に走らせない。
+- MoviePyで提供クリップの切り抜き・クロスフェード、CairoSVGで自己完結SVGの高解像度化、FFmpegで任意BGMのダッキングを行う。素材編集の符号化と完成映像の符号化を区別する。完成映像は一回符号化し、音声結合時に再符号化しない。複数の完成動画を同時描画しない。
 
 ## 保全と再開
 

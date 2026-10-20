@@ -10,3 +10,7 @@ __pycache__/
 *.zip
 *.key
 .env
+.pytest_cache/
+examples/project.json
+*.7z*
+*.vvpp

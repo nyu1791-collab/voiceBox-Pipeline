@@ -1,0 +1,69 @@
+name: VOICEVOX CPU10 Video
+
+on:
+  push:
+    paths:
+      - '.github/workflows/voicevox-cpu-video.yml'
+  workflow_dispatch:
+    inputs:
+      mode:
+        description: 'demo: CPU10と編集機能を実行 / production: 提供ZIPから本番描画'
+        type: choice
+        options: [demo, production]
+        default: demo
+        required: true
+      project_zip_url:
+        description: '制作入力ZIPのHTTPS URL。非公開URLはPROJECT_ZIP_URL Secretを使用'
+        type: string
+        required: false
+
+permissions:
+  contents: read
+
+concurrency:
+  group: voicebox-cpu-video
+  cancel-in-progress: false
+
+jobs:
+  make-video:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    env:
+      VOICEVOX_DIR: /home/runner/.cache/voicebox-tools/voicevox-0.25.2
+      CUDA_VISIBLE_DEVICES: '-1'
+      OMP_NUM_THREADS: '1'
+      OPENBLAS_NUM_THREADS: '1'
+      IMAGEIO_FFMPEG_EXE: /usr/bin/ffmpeg
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+          cache: pip
+      - name: CPU tools
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y --no-install-recommends ffmpeg p7zip-full libcairo2 fontconfig
+          python -m pip install -r requirements.txt
+      - name: Restore official engine cache
+        uses: actions/cache@v4
+        with:
+          path: /home/runner/.cache/voicebox-tools
+          key: voicevox-linux-cpu-x64-0.25.2-bab016a966131b89-v1
+      - name: Install official VOICEVOX CPU
+        run: python tools/install_voicevox.py --directory "$VOICEVOX_DIR"
+      - name: Generate speech and MP4
+        env:
+          RUN_MODE: ${{ inputs.mode || 'demo' }}
+          PROJECT_ZIP_URL: ${{ inputs.project_zip_url || secrets.PROJECT_ZIP_URL }}
+        run: python tools/actions_run.py --mode "$RUN_MODE" --engine-dir "$VOICEVOX_DIR" --output "$RUNNER_TEMP/voicebox-output"
+      - name: Store completed MP4 and technical result
+        uses: actions/upload-artifact@v4
+        with:
+          name: voicebox-video-${{ github.run_id }}
+          path: |
+            ${{ runner.temp }}/voicebox-output/video.mp4
+            ${{ runner.temp }}/voicebox-output/metrics.json
+            ${{ runner.temp }}/voicebox-output/cpu-voice-receipt.json
+          if-no-files-found: error
+          retention-days: 7
