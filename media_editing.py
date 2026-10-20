@@ -121,6 +121,10 @@ def prepare_visual(visual, base, cache):
 def mux_audio(silent_video, narration, destination, settings=None):
     settings = settings or {}
     command = ["ffmpeg", "-v", "error", "-nostdin", "-i", str(silent_video), "-i", str(narration)]
+    video_duration = float(subprocess.check_output(['ffprobe', '-v', 'error', '-show_entries',
+        'format=duration', '-of', 'default=noprint_wrappers=1:nokey=1', str(silent_video)]))
+    if not math.isfinite(video_duration) or video_duration <= 0:
+        raise ValueError('Video must have a finite positive duration')
     normalize = settings.get("normalize", False)
     finish = ("loudnorm=I=-17:TP=-1.5:LRA=9," if normalize else "") + "alimiter=limit=0.78:level=disabled"
     effects = settings.get('effects', [])
@@ -139,7 +143,13 @@ def mux_audio(silent_video, narration, destination, settings=None):
             raise ValueError("bgm_gain_db must be between -60 and -12")
         # A finite bed avoids filter scheduling stalls with delayed SE and loudnorm lookahead.
         command += ["-stream_loop", "-1", '-t', str(audio_duration), "-i", str(settings["bgm"])]
-        graph = '[1:a]volume=6.5dB,asplit=2[voice][side];' + f'[{next_input}:a]volume={gain}dB[bed];'
+        fade = float(settings.get('bgm_fade_seconds', 1.5))
+        if not math.isfinite(fade) or not 0 <= fade <= 10:
+            raise ValueError('bgm_fade_seconds must be between 0 and 10')
+        fade = min(fade, audio_duration / 2)
+        envelope = (f',afade=t=in:st=0:d={fade},afade=t=out:st={audio_duration-fade}:d={fade}'
+                    if fade else '')
+        graph = '[1:a]volume=6.5dB,asplit=2[voice][side];' + f'[{next_input}:a]volume={gain}dB{envelope}[bed];'
         next_input += 1
         if settings.get("ducking", True):
             graph += "[bed][side]sidechaincompress=threshold=0.025:ratio=8:attack=20:release=250[music];"
@@ -161,9 +171,10 @@ def mux_audio(silent_video, narration, destination, settings=None):
         graph += ''.join(f'[{t}]' for t in tracks) + f'amix=inputs={len(tracks)}:duration=first:normalize=0,' + finish + '[audio]'
     else:
         graph += '[voice]' + finish + '[audio]'
-    command += ['-filter_complex', graph, '-map', '0:v:0', '-map', '[audio]']
+    graph += f';[audio]apad=whole_dur={video_duration}[finished_audio]'
+    command += ['-filter_complex', graph, '-map', '0:v:0', '-map', '[finished_audio]']
     command += ["-c:v", "copy", "-c:a", "aac", "-b:a", "128k", "-ar", "48000", "-ac", "1",
-                "-movflags", "+faststart", "-shortest", str(destination)]
+                "-movflags", "+faststart", "-t", str(video_duration), str(destination)]
     subprocess.run(command, check=True)
 
 

@@ -6,3 +6,5 @@ ddgs==9.16.0
 feedparser==6.0.14
 trafilatura==2.3.1
 playwright==1.64.0
+budoux==0.9.0
+pysubs2==1.8.1

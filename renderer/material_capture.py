@@ -54,6 +54,33 @@ def retry_wait(response, default):
     return min(int(value), MAX_RETRY_AFTER) if value.isdigit() else default
 
 
+async def pick_article(page, selector=None, heading=None):
+    """Prefer a main heading and its text container over unrelated article cards."""
+    if selector:
+        for css in selector.split(','):
+            candidate = page.locator(css.strip()).first
+            if await candidate.count() and await candidate.is_visible():
+                return candidate
+        raise ValueError('Requested article selector was not found')
+    headings = page.get_by_role('heading', name=heading, exact=False) if heading else page.locator('h1')
+    for index in range(await headings.count()):
+        candidate = headings.nth(index)
+        if not await candidate.is_visible() or await candidate.evaluate(
+            "e => Boolean(e.closest('aside, nav, [class*=sidebar], [class*=related]'))"):
+            continue
+        container = await candidate.evaluate_handle('''e => {
+            for (let n=e.parentElement;n && n.tagName!=='BODY';n=n.parentElement) {
+                if (n.querySelector('p') && n.innerText.trim().length>=160 &&
+                    n.getBoundingClientRect().width>=300) return n;
+            }
+            return null;
+        }''')
+        element = container.as_element()
+        if element:
+            return element
+    raise ValueError('No article body associated with a main heading; specify a selector or paragraph')
+
+
 async def goto_with_retry(page, url, retries, delays=RETRY_DELAYS):
     """Load a page. On HTTP 429 wait and retry a bounded number of times; record each wait."""
     for attempt in range(len(delays) + 1):
@@ -105,17 +132,10 @@ async def capture_targets(targets, outdir, playwright_factory=None, *, executabl
                     for target, entry in zip(rows, entries):
                         entry.update(captured_utc=stamp, title=await page.title(),
                                      files=[{'path': full.name, 'sha256': digest(full)}])
-                        if target.get('region_selector'):
+                        if target.get('article_region') or target.get('region_selector'):
                             region = {'name': 'article', 'found': False}
                             try:
-                                selected = None
-                                for selector in target['region_selector'].split(','):
-                                    candidate = page.locator(selector.strip()).first
-                                    if await candidate.count() and await candidate.is_visible():
-                                        selected = candidate
-                                        break
-                                if selected is None:
-                                    raise ValueError('Article region was not found')
+                                selected = await pick_article(page, target.get('region_selector'), target.get('heading'))
                                 await selected.scroll_into_view_if_needed(timeout=4000)
                                 box = await selected.bounding_box()
                                 if not box or box['width'] < 20 or box['height'] < 20:

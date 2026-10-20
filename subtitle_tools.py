@@ -1,0 +1,107 @@
+"""Small CPU-only Japanese phrase layout and editable subtitle delivery."""
+from functools import lru_cache
+from pathlib import Path
+import json
+import math
+import re
+
+OPEN = '「『（【〈《([{'
+CLOSE = '、。！？：；」』）】〉》)]},.!?:;'
+PROTECTED = re.compile(r'[0-9０-９]+(?:[.,．][0-9０-９]+)*[ \u3000]*(?:兆円|億円|万円|時間|ドル|％|%|円|年|月|日|秒|分|人|件|倍|GB|MB|Hz|px|fps)|'
+                       r'[A-Za-z0-9]+(?:[._:/+%-][A-Za-z0-9]+)*')
+
+
+@lru_cache(maxsize=1)
+def japanese_parser():
+    import budoux
+    return budoux.load_default_japanese_parser()
+
+
+@lru_cache(maxsize=8192)
+def phrase_breaks(text, emphasis=()):
+    chunks = japanese_parser().parse(text)
+    if ''.join(chunks) != text:
+        raise ValueError('Phrase layout must preserve every character')
+    protected = set()
+    for match in PROTECTED.finditer(text):
+        protected.update(range(match.start()+1, match.end()))
+    for term in emphasis:
+        if not term:
+            continue
+        begin = text.find(term)
+        while begin >= 0:
+            protected.update(range(begin+1, begin+len(term)))
+            begin = text.find(term, begin+1)
+    positions, offset = [], 0
+    for chunk in chunks[:-1]:
+        offset += len(chunk)
+        if offset not in protected and text[offset] not in CLOSE and text[offset-1] not in OPEN:
+            positions.append(offset)
+    return tuple(positions)
+
+
+def wrap_japanese(text, font, width, strict=False):
+    text = str(text)
+    boundaries = phrase_breaks(text)
+    result, start = [], 0
+    while start < len(text):
+        if font.getlength(text[start:]) <= width:
+            result.append(text[start:])
+            break
+        candidates = [p for p in boundaries if p > start and font.getlength(text[start:p]) <= width]
+        if not candidates:
+            if strict:
+                return None
+            result.append(text[start:])
+            break
+        end = candidates[-1]
+        result.append(text[start:end])
+        start = end
+    return result
+
+
+def write_subtitles(records, font, layout, output):
+    """Share caption states with the video; timing within a line remains length-weighted."""
+    import pysubs2
+    from renderer.render_reusable_landscape_raw import caption_states, wrap_words, _font
+    output = Path(output)
+    document = pysubs2.SSAFile()
+    document.info.update(PlayResX='1280', PlayResY='720', WrapStyle='2')
+    for speaker, color in [('ずんだもん', pysubs2.Color(32, 72, 48)),
+                           ('四国めたん', pysubs2.Color(92, 38, 64))]:
+        document.styles[speaker] = pysubs2.SSAStyle(fontname='Zen Maru Gothic Medium', fontsize=36,
+            primarycolor=color, outline=0, shadow=0, marginl=260, marginr=260, marginv=34)
+    cues = []
+    face = _font(str(font), 36)
+    width = int(layout.get('caption_box_width', 760))-2*int(layout.get('caption_box_pad', 14))-24
+    for row in records:
+        start, end = float(row['start']), float(row['end'])
+        if not all(map(math.isfinite, (start, end))) or not 0 <= start < end:
+            raise ValueError('Subtitle timing must use a positive measured voice interval')
+        if cues and start*1000 < cues[-1]['end_ms']-1:
+            raise ValueError('Subtitle voice intervals overlap')
+        states = caption_states(row['caption_text'], font, layout, row.get('caption_emphasis_terms') or ())
+        if not states or ''.join(states) != row['caption_text']:
+            raise ValueError('Subtitle states must preserve the full caption text')
+        total, offset = sum(map(len, states)), 0
+        for state in states:
+            begin = round((start+(end-start)*offset/total)*1000)
+            offset += len(state)
+            finish = round((start+(end-start)*offset/total)*1000)
+            if finish <= begin:
+                raise ValueError('Subtitle interval is too short for millisecond output')
+            lines = wrap_words(state, face, width, strict=True)
+            if lines is None or len(lines) > 3:
+                raise ValueError('Editable subtitle exceeds the approved layout')
+            # Metadata retains exact plain text even where a subtitle format has its own escaping.
+            event = pysubs2.SSAEvent(start=begin, end=finish, style=row['speaker'], name=row['speaker'])
+            event.plaintext = '\n'.join(lines)
+            document.append(event)
+            cues.append({'line_id': row['id'], 'speaker': row['speaker'], 'start_ms': begin,
+                         'end_ms': finish, 'text': state, 'lines': lines})
+    for suffix in ('srt', 'ass', 'vtt'):
+        options = {'keep_ssa_tags': True} if suffix in ('srt', 'vtt') else {}
+        document.save(str(output / ('subtitles.'+suffix)), encoding='utf-8', **options)
+    (output / 'subtitles.json').write_text(json.dumps({'timing_basis': 'measured voice intervals; character-weighted caption states',
+        'word_alignment': False, 'cues': cues}, ensure_ascii=False, indent=2)+'\n')
+    return cues

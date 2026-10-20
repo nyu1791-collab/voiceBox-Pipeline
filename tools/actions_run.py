@@ -89,6 +89,8 @@ def demo(engine, font, working, output):
     import numpy as np
     from PIL import Image, ImageDraw, ImageFont
     from moviepy import ColorClip, CompositeVideoClip, ImageClip, VideoFileClip
+    profile = pipeline.read_json(ROOT / 'config/landscape_profile_v18.json')
+    fps = profile['layout']['fps']
     output.mkdir(parents=True, exist_ok=True)
     source = working / "diagram.svg"
     boxes = ''.join(f'<rect x="{40+i*116}" y="170" width="100" height="130" rx="14" fill="#bfe8d0"/>'
@@ -106,7 +108,7 @@ def demo(engine, font, working, output):
     project = {"title": "VOICEVOX CPU10並列 動作デモ", "lines": lines, "visuals": [visual]}
     pipeline.atomic_json(working / "project.json", project)
     records, audio_report = pipeline.prepare_audio(project, {"engine_dir": str(engine)}, output,
-        pipeline.engine_fingerprint(engine, ROOT / ".cache/engine-fingerprint.json"))
+        pipeline.engine_fingerprint(engine, pipeline.engine_fingerprint_cache(engine)))
     duration = records[-1]["end"]
     source_clips = []
     for index, color in enumerate(((70, 150, 110), (75, 120, 185))):
@@ -132,8 +134,9 @@ def demo(engine, font, working, output):
     with ImageClip(visual["file"]).resized((1280, 720)).with_duration(duration) as background:
         with VideoFileClip(str(edited), audio=False) as clip:
             with CompositeVideoClip([background, clip.resized(width=650).with_position((315, 210)).with_start(1), *caption_clips]) as composition:
-                composition.with_duration(duration).write_videofile(str(silent), fps=30, codec="libx264", audio=False,
-                    preset="veryfast", threads=2, ffmpeg_params=["-crf", "20", "-pix_fmt", "yuv420p"], logger=None)
+                composition.with_duration(duration).write_videofile(str(silent), fps=fps, codec="libx264", audio=False,
+                    preset="veryfast", threads=2, ffmpeg_params=["-vf", f"scale={profile['output']['width']}:{profile['output']['height']}:flags=lanczos",
+                        "-crf", "20", "-pix_fmt", "yuv420p"], logger=None)
     for clip in caption_clips:
         clip.close()
     bgm = working / "test-tone.wav"
@@ -176,6 +179,9 @@ def main():
             if project.name == 'research-request.json':
                 from tools.prepare_project import prepare
                 request = json.loads(project.read_text())
+                selected = os.environ.get('SCRIPT_PROVIDER', 'request')
+                if (selected == 'opencode') != (request.get('provider') == 'opencode'):
+                    raise ValueError('OpenCode requires matching script_provider and research-request.json provider')
                 prepared = working / 'prepared-project'
                 prepare(request, prepared, allow_api=os.environ.get('ALLOW_SCRIPT_API') == 'true',
                         executable_path=os.environ.get('PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH'))

@@ -133,8 +133,14 @@ def script_prompt(pack, minutes=10):
 
 def generate_script(prompt, provider, model, *, allow_api=False):
     """One call, no fallback. Credentials are read only for the selected provider."""
-    if not allow_api or provider not in ('gemini', 'groq') or not model:
-        raise ValueError('Specify gemini/groq, model and --allow-api to call a script API')
+    if not allow_api or provider not in ('gemini', 'groq', 'opencode') or not model:
+        raise ValueError('Specify gemini/groq/opencode, model and --allow-api to call a script API')
+    if provider == 'opencode':
+        from opencode_script import FREE_MODEL, generate_opencode_script
+        if model != FREE_MODEL:
+            raise ValueError('OpenCode only permits the free model ' + FREE_MODEL)
+        script, _ = generate_opencode_script(prompt, os.environ.get('OPENCODE_API_KEY'))
+        return script
     key = os.environ.get('GEMINI_API_KEY' if provider == 'gemini' else 'GROQ_API_KEY')
     if not key:
         raise ValueError('Selected script API credential is not configured')

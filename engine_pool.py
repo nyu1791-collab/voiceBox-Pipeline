@@ -1,6 +1,7 @@
 """Ten owned, isolated VOICEVOX CPU engines. No GPU or shared-engine requests."""
 from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
+from tempfile import NamedTemporaryFile
 import hashlib
 import json
 import os
@@ -15,6 +16,13 @@ import urllib.request
 WORKERS = 10
 
 
+def engine_fingerprint_cache(directory):
+    """Keep official engine metadata across disposable production checkouts."""
+    cache_home = Path(os.environ.get('XDG_CACHE_HOME', Path.home() / '.cache'))
+    identity = hashlib.sha256(str(Path(directory).resolve()).encode()).hexdigest()
+    return cache_home / 'voicebox-tools' / 'engine-fingerprints' / (identity + '.json')
+
+
 def engine_fingerprint(directory, cache=None):
     directory = Path(directory)
     paths = [directory / "run", directory / "libvoicevox_core.so",
@@ -26,9 +34,17 @@ def engine_fingerprint(directory, cache=None):
         stat = path.stat()
         signature.append([str(path.relative_to(directory)), stat.st_size, stat.st_mtime_ns, stat.st_ctime_ns])
     if cache is not None and Path(cache).is_file():
-        previous = json.loads(Path(cache).read_text())
-        if previous.get("signature") == signature and previous.get("directory") == str(directory.resolve()):
-            return previous["sha256"]
+        try:
+            previous = json.loads(Path(cache).read_text())
+        except (OSError, ValueError):
+            previous = None
+        if isinstance(previous, dict):
+            value = previous.get('sha256')
+            if (previous.get("signature") == signature and
+                    previous.get("directory") == str(directory.resolve()) and
+                    isinstance(value, str) and len(value) == 64 and
+                    all(c in '0123456789abcdef' for c in value)):
+                return value
     digest = hashlib.sha256()
     for path in paths:
         digest.update(str(path.relative_to(directory)).encode())
@@ -38,10 +54,25 @@ def engine_fingerprint(directory, cache=None):
     value = digest.hexdigest()
     if cache is not None:
         cache = Path(cache)
-        cache.parent.mkdir(parents=True, exist_ok=True)
-        temp = cache.with_suffix(".tmp")
-        temp.write_text(json.dumps({"directory": str(directory.resolve()), "signature": signature, "sha256": value}))
-        temp.replace(cache)
+        temp = None
+        try:
+            cache.parent.mkdir(parents=True, exist_ok=True)
+            with NamedTemporaryFile('w', dir=cache.parent, prefix=cache.name + '.',
+                                    suffix='.tmp', delete=False) as handle:
+                temp = Path(handle.name)
+                json.dump({"directory": str(directory.resolve()), "signature": signature,
+                           "sha256": value}, handle)
+            temp.replace(cache)
+        except OSError:
+            # A cache is optional: retain the fully computed digest if storage
+            # is unavailable, rather than preventing speech/video production.
+            pass
+        finally:
+            if temp is not None:
+                try:
+                    temp.unlink(missing_ok=True)
+                except OSError:
+                    pass
     return value
 
 

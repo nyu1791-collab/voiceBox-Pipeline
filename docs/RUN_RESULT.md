@@ -1,5 +1,7 @@
 # CPU10並列の動作記録
 
+これは1280×720・30fpsだった時点のサンプル実測。現行設定は360p・24fpsで、日本語訳とBGMにも対応する。[最新の工程・完成物記録](MIGRATION_VIDEO_WORKFLOW_20261020.md) を参照する。
+
 2026-10-20 UTC、既存VM（e2-standard-8、8 vCPU、32GB RAM）で `examples/project.json` の異なる10台詞を使って実行。
 
 | 項目 | 実測 |

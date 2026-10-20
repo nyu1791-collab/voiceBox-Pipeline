@@ -18,8 +18,9 @@ import time
 import uuid
 import wave
 
-from engine_pool import EnginePool, WORKERS, engine_fingerprint
+from engine_pool import EnginePool, WORKERS, engine_fingerprint, engine_fingerprint_cache
 from media_editing import prepare_visual, mux_audio, sound_effects, make_thumbnail
+from subtitle_tools import write_subtitles
 
 ROOT = Path(__file__).resolve().parent
 SPEAKERS = {"ずんだもん": 3, "四国めたん": 2}
@@ -97,7 +98,7 @@ def setup(args):
     from PIL import ImageFont
     ImageFont.truetype(values["font"], 36)
     atomic_json(ROOT / "runtime.local.json", values)
-    print("READY: CPU VOICEVOX × 10 / approved native parts / 1280×720", flush=True)
+    print("READY: CPU VOICEVOX × 10 / approved native parts", flush=True)
 
 
 def load_project(path):
@@ -130,6 +131,9 @@ def load_project(path):
         if not visual.get("id") or visual["id"] in visual_ids:
             raise ValueError("visual ids must be unique")
         visual_ids.add(visual["id"])
+        if visual.get('source_language') == 'en' and (
+                not isinstance(visual.get('translation'), str) or not visual['translation'].strip()):
+            raise ValueError('English evidence requires a Japanese translation')
         prepared = prepare_visual(visual, path.parent, ROOT / ".cache/edited-assets")
         visual.clear()
         visual.update(prepared)
@@ -245,6 +249,7 @@ def prepare_audio(project, runtime, out, engine_sha):
             records.append({"id": row["id"], "speaker": row["speaker"],
                 "voicevox_speaker_id": SPEAKERS[row["speaker"]], "caption_text": row["text"],
                 "emotion": row["emotion"], "visual_id": row["visual"], "scene_id": row.get("section", "main"),
+                "caption_emphasis_terms": row.get('caption_emphasis_terms', []),
                 "start": frame_position / 48000, "end": (frame_position + frames) / 48000,
                 "audio_sha256": sha256(directory / "voice.wav"), "cache": str(directory)})
             frame_position += frames
@@ -258,8 +263,10 @@ def prepare_audio(project, runtime, out, engine_sha):
 def render(project, runtime, out, records):
     started = time.monotonic()
     profile = read_json(ROOT / "config/landscape_profile_v18.json")
+    output_width, output_height = profile['output']['width'], profile['output']['height']
     profile["layout"]["background_image"] = runtime["background"]
     atomic_json(out / "profile.json", profile)
+    write_subtitles(records, runtime['font'], profile['layout'], out)
     visuals = []
     for visual in project["visuals"]:
         visuals.append({**visual, "source_credit": visual.get("source_credit", "利用者提供素材"),
@@ -273,10 +280,10 @@ def render(project, runtime, out, records):
         "source_url": visuals[0]["source_url"], "visuals": visuals, "sections": sections}
     atomic_json(out / "presentation.json", presentation)
     env = dict(os.environ, VIDEO_REVIEW_MODE="batch", DIRECT_ENCODE="1", OUT_CRF="20",
-               OUT_VF="scale=1280:720:flags=lanczos", OUT_PRESET="veryfast", DIRECT_THREADS="4",
+               OUT_VF=f"scale={output_width}:{output_height}:flags=lanczos", OUT_PRESET="veryfast", DIRECT_THREADS="4",
                CUDA_VISIBLE_DEVICES="-1")
     temporary = out / ("silent-" + uuid.uuid4().hex + ".mp4")
-    print("RENDER: 1280×720 / 30fps / CRF20 / native expressions and mouth", flush=True)
+    print(f"RENDER: {output_width}×{output_height} / {profile['layout']['fps']}fps / veryfast / CRF20 / native expressions and mouth", flush=True)
     run_command([sys.executable, str(ROOT / "renderer/render_reusable_landscape_raw.py"),
         "--audio", str(out / "narration.wav"), "--timing", str(out / "timing.json"),
         "--presentation", str(out / "presentation.json"), "--profile", str(out / "profile.json"),
@@ -308,12 +315,13 @@ def execute(args):
     runtime = read_json(ROOT / "runtime.local.json")
     project = load_project(project_path)
     fingerprint_started = time.monotonic()
-    engine_sha = engine_fingerprint(runtime["engine_dir"], ROOT / ".cache/engine-fingerprint.json")
+    engine_sha = engine_fingerprint(runtime["engine_dir"], engine_fingerprint_cache(runtime["engine_dir"]))
     shell = Path(runtime["shell"])
     shell_sha = json_digest({str(p.relative_to(shell)): sha256(p) for p in sorted(shell.rglob("*.png"))})
     fingerprint_seconds = round(time.monotonic() - fingerprint_started, 3)
     implementation = {str(p.relative_to(ROOT)): sha256(p) for directory in (ROOT, ROOT / "renderer", ROOT / "config")
                       for p in directory.iterdir() if p.is_file() and p.suffix in (".py", ".json") and p.name != "runtime.local.json"}
+    implementation['requirements.txt'] = sha256(ROOT / 'requirements.txt')
     asset_files = [v["file"] for v in project["visuals"]] + [v["video_file"] for v in project["visuals"] if v.get("video_file")]
     if project.get("audio", {}).get("bgm"):
         asset_files.append(project["audio"]["bgm"])

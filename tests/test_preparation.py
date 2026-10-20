@@ -26,8 +26,10 @@ def source_site(tmp_path):
     site.mkdir()
     paragraph = 'A CPU processes instructions and a voice engine creates a waveform from text. The audio duration determines when a subtitle appears. Sources are saved with their retrieval time and are kept separate from narration. '
     (site / 'article.html').write_text('<html><head><title>CPU voice article</title></head><body style="margin:0;background:#182820">'
-        '<nav style="height:80px;color:white">navigation</nav><article style="background:#fff4d0;margin:20px;padding:20px">'
-        '<h1>CPU voice article</h1>' + ''.join('<p>'+paragraph+'</p>' for _ in range(8)) + '</article></body></html>')
+        '<nav style="height:80px;color:white">navigation</nav>'
+        '<aside><article style="background:red">An unrelated related-article card</article></aside>'
+        '<main style="background:#fff4d0;margin:20px;padding:20px">'
+        '<h1>CPU voice article</h1>' + ''.join('<p>'+paragraph+'</p>' for _ in range(8)) + '</main></body></html>')
     server = ThreadingHTTPServer(('127.0.0.1', 0), partial(QuietHandler, directory=str(site)))
     address = f'http://127.0.0.1:{server.server_port}'
     (site / 'feed.xml').write_text(f'<rss version="2.0"><channel><title>Test feed</title><link>{address}</link><description>fixture</description>'
@@ -71,6 +73,27 @@ def test_inaccessible_source_never_becomes_a_visual(source_site, tmp_path):
     source = json.loads((output / 'research.json').read_text())['sources'][0]
     assert source['extraction_status'] == 'FAILED'
     assert not (output / 'project.json').exists()
+
+
+@pytest.mark.parametrize('text, succeeds', [('waveform', True), ('missing-article-claim', False)])
+def test_explicit_paragraph_is_used_or_reported_missing(source_site, tmp_path, text, succeeds):
+    url = source_site + '/article.html'
+    sid = source_id(url)
+    request = {'topic': 'CPU音声', 'urls': [url], 'news': False, 'search': False,
+               'capture_overrides': {sid: {'heading': 'CPU voice article',
+                   'crops': [{'name': 'claim', 'text': text}]}}}
+    script = [{'speaker': 'zundamon', 'text': '音声を作るのだ。', 'source_id': sid},
+              {'speaker': 'metan', 'text': '波形に変換するわ。', 'source_id': sid}]
+    output = tmp_path/'paragraph'
+    if succeeds:
+        prepare(request, output, script, executable_path=shutil.which('chromium'))
+        project = json.loads((output/'project.json').read_text())
+        assert project['visuals'][0]['file'].endswith('_claim.png')
+    else:
+        with pytest.raises(RuntimeError, match='capture failed'):
+            prepare(request, output, script, executable_path=shutil.which('chromium'))
+        assert json.loads((output/'preparation.json').read_text())['status'] == 'FAILED'
+        assert not (output/'project.json').exists()
 
 
 def test_api_is_explicit_and_unknown_source_is_rejected(monkeypatch):
@@ -124,3 +147,67 @@ def test_se_uses_actual_timing_and_thumbnail_uses_real_frame(tmp_path):
     with Image.open(thumbnail) as image:
         assert image.size == (1280, 720)
         assert image.getpixel((10, 710))[1] > 100
+
+
+def test_dialogue_selects_distinct_source_paragraphs(source_site, tmp_path):
+    url = source_site + '/article.html'
+    sid = source_id(url)
+    article = tmp_path / 'site/article.html'
+    article.write_text(article.read_text().replace('</main>',
+        '<p>A separate paragraph describes platform support.</p></main>'))
+    script = [{'id': 11, 'speaker': 'zundamon', 'text': '音声の説明なのだ。', 'source_id': sid},
+              {'id': 12, 'speaker': 'metan', 'text': '次は対応環境の説明よ。', 'source_id': sid}]
+    request = {'topic': 'CPU音声', 'urls': [url], 'news': False, 'search': False,
+               'capture_overrides': {sid: {'crops': [
+                   {'name': 'audio', 'text': 'waveform', 'line_ids': [11],
+                    'source_language': 'en', 'translation': '音声の波形についての説明です。'},
+                   {'name': 'platform', 'text': 'A separate paragraph', 'line_ids': [12],
+                    'source_language': 'en', 'translation': '別の段落で対応環境を説明しています。'}]}}}
+    output = tmp_path / 'multiple'
+    result = prepare(request, output, script, executable_path=shutil.which('chromium'))
+    project = json.loads((output / 'project.json').read_text())
+    assert result['screenshots'] == 2
+    assert [r['visual'] for r in project['lines']] == [sid + ':audio', sid + ':platform']
+    assert [r['text'] for r in project['lines']] == [r['text'] for r in script]
+    visuals = {v['id']: v for v in project['visuals']}
+    assert visuals[sid + ':audio']['sha256'] != visuals[sid + ':platform']['sha256']
+    assert visuals[sid + ':platform']['translation'] == '別の段落で対応環境を説明しています。'
+    assert all((output / v['file']).is_file() and v['source_url'] == url for v in visuals.values())
+
+
+@pytest.mark.parametrize('line_ids', [[999], [11, 11]])
+def test_invalid_crop_dialogue_binding_stops_before_capture(source_site, tmp_path, monkeypatch, line_ids):
+    url = source_site + '/article.html'
+    sid = source_id(url)
+    def no_capture(*args, **kwargs):
+        pytest.fail('invalid mapping must be rejected before browser startup')
+    monkeypatch.setattr('tools.prepare_project.capture_targets', no_capture)
+    request = {'topic': 'CPU音声', 'urls': [url], 'news': False, 'search': False,
+               'capture_overrides': {sid: {'crops': [
+                   {'name': 'audio', 'text': 'waveform', 'line_ids': line_ids}]}}}
+    script = [{'id': 11, 'speaker': 'zundamon', 'text': '説明なのだ。', 'source_id': sid},
+              {'id': 12, 'speaker': 'metan', 'text': '説明よ。', 'source_id': sid}]
+    with pytest.raises(ValueError, match='line_ids|only one crop'):
+        prepare(request, tmp_path / 'invalid-mapping', script)
+
+
+def test_bgm_fades_and_preserves_all_video_packets(tmp_path):
+    video, voice, music = (tmp_path / n for n in ('video.mp4', 'voice.wav', 'music.wav'))
+    subprocess.run(['ffmpeg', '-v', 'error', '-f', 'lavfi', '-i', 'color=c=green:s=320x180:r=24:d=3',
+                    '-c:v', 'libx264', '-pix_fmt', 'yuv420p', str(video)], check=True)
+    for path, source in [(voice, 'anullsrc=r=48000:cl=mono'),
+                         (music, 'sine=frequency=1000:sample_rate=48000')]:
+        subprocess.run(['ffmpeg', '-v', 'error', '-f', 'lavfi', '-i', source, '-t', '3', str(path)], check=True)
+    out = tmp_path / 'mixed.mp4'
+    mux_audio(video, voice, out, {'bgm': str(music), 'bgm_gain_db': -12, 'ducking': False,
+                                'bgm_fade_seconds': 1})
+    samples = np.frombuffer(subprocess.check_output(['ffmpeg', '-v', 'error', '-i', str(out),
+        '-map', '0:a', '-f', 'f32le', '-']), dtype='<f4')
+    def rms(a, b):
+        return np.sqrt(np.mean(samples[int(a*48000):int(b*48000)] ** 2))
+    assert rms(.05, .15) < rms(1.2, 1.5) * .3
+    assert rms(2.85, 2.95) < rms(1.2, 1.5) * .3
+    def packets(path):
+        return subprocess.check_output(['ffmpeg', '-v', 'error', '-i', str(path), '-map', '0:v:0',
+            '-c:v', 'copy', '-f', 'hash', '-hash', 'sha256', '-'])
+    assert packets(out) == packets(video)

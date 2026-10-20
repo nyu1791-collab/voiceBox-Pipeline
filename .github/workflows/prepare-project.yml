@@ -13,10 +13,10 @@ on:
       provider:
         description: 'noneは情報収集とプロンプト保存だけ。API利用は明示選択'
         type: choice
-        options: [none, gemini, groq]
+        options: [none, gemini, groq, opencode]
         default: none
       model:
-        description: 'API選択時のモデルID。自動選択・fallbackなし'
+        description: 'API選択時のモデルID。OpenCodeは deepseek-v4.1-flash-free のみ'
         type: string
       minutes:
         description: '台本の目標分数。実尺の保証ではない'
@@ -36,6 +36,13 @@ jobs:
         with:
           python-version: '3.11'
           cache: pip
+      - uses: actions/setup-node@v4
+        if: inputs.provider == 'opencode'
+        with:
+          node-version: '22'
+      - name: Install verified official OpenCode CLI
+        if: inputs.provider == 'opencode'
+        run: npm install --global opencode-ai@1.19.0
       - name: Research and browser tools
         run: |
           python -m pip install -r requirements.txt
@@ -47,8 +54,9 @@ jobs:
           PROVIDER: ${{ inputs.provider }}
           MODEL: ${{ inputs.model }}
           MINUTES: ${{ inputs.minutes }}
-          GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
-          GROQ_API_KEY: ${{ secrets.GROQ_API_KEY }}
+          GEMINI_API_KEY: ${{ inputs.provider == 'gemini' && secrets.GEMINI_API_KEY || '' }}
+          GROQ_API_KEY: ${{ inputs.provider == 'groq' && secrets.GROQ_API_KEY || '' }}
+          OPENCODE_API_KEY: ${{ inputs.provider == 'opencode' && secrets.OPENCODE_API_KEY || '' }}
         run: |
           python - <<'PY'
           import json, os
