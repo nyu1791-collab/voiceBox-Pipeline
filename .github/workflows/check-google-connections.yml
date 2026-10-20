@@ -1,0 +1,58 @@
+name: Vertex and Antigravity Connections
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  id-token: write
+
+jobs:
+  check:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Install pinned official Antigravity CLI
+        run: python tools/install_antigravity_cli.py --directory "$RUNNER_TEMP/antigravity-bin"
+      - name: Configure Antigravity API provider
+        run: |
+          mkdir -p "$HOME/.gemini/antigravity-cli"
+          python - <<'PYCONFIG'
+          import json
+          from pathlib import Path
+          path = Path.home() / '.gemini/antigravity-cli/settings.json'
+          data = json.loads(path.read_text()) if path.exists() else {}
+          data['modelProvider'] = 'gemini'
+          path.write_text(json.dumps(data) + '\n')
+          PYCONFIG
+      - name: Authenticate Vertex with short-lived credentials
+        id: auth
+        uses: google-github-actions/auth@v3
+        with:
+          project_id: ${{ vars.GCP_PROJECT_ID }}
+          workload_identity_provider: ${{ vars.GCP_WORKLOAD_IDENTITY_PROVIDER }}
+          service_account: ${{ vars.GCP_SERVICE_ACCOUNT }}
+          token_format: access_token
+          create_credentials_file: false
+      - name: Check connections without generating content
+        if: ${{ !cancelled() }}
+        env:
+          VERTEX_ACCESS_TOKEN: ${{ steps.auth.outputs.access_token }}
+          GEMINI_API_KEY: ${{ secrets.ANTIGRAVITY_GEMINI_API_KEY }}
+          GCP_PROJECT_ID: ${{ vars.GCP_PROJECT_ID }}
+          GCP_SERVICE_ACCOUNT: ${{ vars.GCP_SERVICE_ACCOUNT }}
+          GCP_PROJECT_NUMBER: '238830383375'
+          GITHUB_RUN_ID: ${{ github.run_id }}
+        run: python tools/check_google_connections.py --cli "$RUNNER_TEMP/antigravity-bin/agy" --output "$RUNNER_TEMP/google-connections.json"
+      - name: Save non-secret connection receipt
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: google-connections-${{ github.run_id }}-${{ github.run_attempt }}
+          path: ${{ runner.temp }}/google-connections.json
+          if-no-files-found: error
+          retention-days: 7
