@@ -5,6 +5,7 @@ on:
 
 permissions:
   contents: read
+  id-token: write
 
 concurrency:
   group: google-drive-repository-sync
@@ -27,18 +28,30 @@ jobs:
             --output="$RUNNER_TEMP/repository.zip" \
             "$COMMIT"
 
-      - name: Get Google Drive access token
+      - name: Check Google Cloud configuration
+        env:
+          WORKLOAD_IDENTITY_PROVIDER: ${{ vars.GOOGLE_WORKLOAD_IDENTITY_PROVIDER }}
+          GOOGLE_SERVICE_ACCOUNT: ${{ vars.GOOGLE_SERVICE_ACCOUNT }}
+          GOOGLE_DRIVE_FOLDER_ID: ${{ vars.GOOGLE_DRIVE_FOLDER_ID }}
+        run: |
+          set -euo pipefail
+          test -n "$WORKLOAD_IDENTITY_PROVIDER"
+          test -n "$GOOGLE_SERVICE_ACCOUNT"
+          test -n "$GOOGLE_DRIVE_FOLDER_ID"
+
+      - name: Get Google Drive access token with Workload Identity Federation
         id: google-auth
         uses: google-github-actions/auth@v2
         with:
-          credentials_json: ${{ secrets.GOOGLE_DRIVE_SERVICE_ACCOUNT_JSON }}
+          workload_identity_provider: ${{ vars.GOOGLE_WORKLOAD_IDENTITY_PROVIDER }}
+          service_account: ${{ vars.GOOGLE_SERVICE_ACCOUNT }}
           token_format: access_token
           access_token_scopes: https://www.googleapis.com/auth/drive.file
 
       - name: Upload snapshot to Google Drive
         env:
           GOOGLE_DRIVE_ACCESS_TOKEN: ${{ steps.google-auth.outputs.access_token }}
-          GOOGLE_DRIVE_FOLDER_ID: ${{ secrets.GOOGLE_DRIVE_FOLDER_ID }}
+          GOOGLE_DRIVE_FOLDER_ID: ${{ vars.GOOGLE_DRIVE_FOLDER_ID }}
           REPOSITORY: ${{ github.event.repository.name }}
           COMMIT: ${{ github.sha }}
         run: |
