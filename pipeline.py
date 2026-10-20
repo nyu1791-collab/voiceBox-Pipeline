@@ -131,6 +131,9 @@ def load_project(path):
         if not visual.get("id") or visual["id"] in visual_ids:
             raise ValueError("visual ids must be unique")
         visual_ids.add(visual["id"])
+        if visual.get('source_language') == 'en' and (
+                not isinstance(visual.get('translation'), str) or not visual['translation'].strip()):
+            raise ValueError('English evidence requires a Japanese translation')
         prepared = prepare_visual(visual, path.parent, ROOT / ".cache/edited-assets")
         visual.clear()
         visual.update(prepared)

@@ -159,8 +159,10 @@ def test_dialogue_selects_distinct_source_paragraphs(source_site, tmp_path):
               {'id': 12, 'speaker': 'metan', 'text': '次は対応環境の説明よ。', 'source_id': sid}]
     request = {'topic': 'CPU音声', 'urls': [url], 'news': False, 'search': False,
                'capture_overrides': {sid: {'crops': [
-                   {'name': 'audio', 'text': 'waveform', 'line_ids': [11]},
-                   {'name': 'platform', 'text': 'A separate paragraph', 'line_ids': [12]}]}}}
+                   {'name': 'audio', 'text': 'waveform', 'line_ids': [11],
+                    'source_language': 'en', 'translation': '音声の波形についての説明です。'},
+                   {'name': 'platform', 'text': 'A separate paragraph', 'line_ids': [12],
+                    'source_language': 'en', 'translation': '別の段落で対応環境を説明しています。'}]}}}
     output = tmp_path / 'multiple'
     result = prepare(request, output, script, executable_path=shutil.which('chromium'))
     project = json.loads((output / 'project.json').read_text())
@@ -169,6 +171,7 @@ def test_dialogue_selects_distinct_source_paragraphs(source_site, tmp_path):
     assert [r['text'] for r in project['lines']] == [r['text'] for r in script]
     visuals = {v['id']: v for v in project['visuals']}
     assert visuals[sid + ':audio']['sha256'] != visuals[sid + ':platform']['sha256']
+    assert visuals[sid + ':platform']['translation'] == '別の段落で対応環境を説明しています。'
     assert all((output / v['file']).is_file() and v['source_url'] == url for v in visuals.values())
 
 
@@ -186,3 +189,25 @@ def test_invalid_crop_dialogue_binding_stops_before_capture(source_site, tmp_pat
               {'id': 12, 'speaker': 'metan', 'text': '説明よ。', 'source_id': sid}]
     with pytest.raises(ValueError, match='line_ids|only one crop'):
         prepare(request, tmp_path / 'invalid-mapping', script)
+
+
+def test_bgm_fades_and_preserves_all_video_packets(tmp_path):
+    video, voice, music = (tmp_path / n for n in ('video.mp4', 'voice.wav', 'music.wav'))
+    subprocess.run(['ffmpeg', '-v', 'error', '-f', 'lavfi', '-i', 'color=c=green:s=320x180:r=24:d=3',
+                    '-c:v', 'libx264', '-pix_fmt', 'yuv420p', str(video)], check=True)
+    for path, source in [(voice, 'anullsrc=r=48000:cl=mono'),
+                         (music, 'sine=frequency=1000:sample_rate=48000')]:
+        subprocess.run(['ffmpeg', '-v', 'error', '-f', 'lavfi', '-i', source, '-t', '3', str(path)], check=True)
+    out = tmp_path / 'mixed.mp4'
+    mux_audio(video, voice, out, {'bgm': str(music), 'bgm_gain_db': -12, 'ducking': False,
+                                'bgm_fade_seconds': 1})
+    samples = np.frombuffer(subprocess.check_output(['ffmpeg', '-v', 'error', '-i', str(out),
+        '-map', '0:a', '-f', 'f32le', '-']), dtype='<f4')
+    def rms(a, b):
+        return np.sqrt(np.mean(samples[int(a*48000):int(b*48000)] ** 2))
+    assert rms(.05, .15) < rms(1.2, 1.5) * .3
+    assert rms(2.85, 2.95) < rms(1.2, 1.5) * .3
+    def packets(path):
+        return subprocess.check_output(['ffmpeg', '-v', 'error', '-i', str(path), '-map', '0:v:0',
+            '-c:v', 'copy', '-f', 'hash', '-hash', 'sha256', '-'])
+    assert packets(out) == packets(video)

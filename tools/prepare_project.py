@@ -75,10 +75,15 @@ def prepare(request, output, script=None, *, allow_api=False, executable_path=No
         # Keep the original source ID as the backwards-compatible default image.
         choices = [(source['id'], crop)] + [
             (source['id'] + ':' + item['name'], item) for item in requested]
+        override = request.get('capture_overrides', {}).get(source['id'], {})
+        specifications = {c['name']: c for c in override.get('crops', [])}
         for visual_id, item in choices:
+            specification = specifications.get(item['name'], override)
             visuals.append({'id': visual_id, 'file': 'materials/' + item['file'],
                 'source_url': source.get('final_url', source['url']), 'source_credit': source['title'],
-                'captured_utc': capture['captured_utc'], 'sha256': item['sha256']})
+                'captured_utc': capture['captured_utc'], 'sha256': item['sha256'],
+                'source_language': specification.get('source_language', override.get('source_language')),
+                'translation': specification.get('translation', '')})
     if failures:
         atomic_json(output / 'preparation.json', {'status': 'FAILED', 'capture_failures': failures})
         raise RuntimeError('Referenced page capture failed; see materials/manifest.json')

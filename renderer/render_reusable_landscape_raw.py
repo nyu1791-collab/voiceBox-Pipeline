@@ -12,6 +12,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 from contextlib import closing
 from media_editing import VideoPanels
+from evidence_translation import TranslationCards
 from subtitle_tools import wrap_japanese, phrase_breaks
 from motion_diagrams import bound_timeline, active_diagram, cache_state as motion_cache_state, render_panel as render_motion_panel
 import argparse, hashlib, json, math, re, signal, wave, time
@@ -190,6 +191,7 @@ def resize_character(im, target_h, opacity=1.0):
 
 def draw_summary_block(d,layout,font_path,item):
     """中央パネル直下の要約（1〜2行、22px）。build_backgrounds と build_visual_layers（本番の経路）の両方が使う（2026-10-19）。"""
+    if item.get("translation"): return
     _sum=summary_lines(item)
     if not _sum: return
     _sx1,_sy1,_sx2,_sy2=summary_box(layout["zones"]["evidence"],len(_sum))
@@ -233,6 +235,8 @@ def build_backgrounds(profile, presentation, presentation_path, font_path):
         draw_summary_block(d,layout,font_path,item)  # 中央パネル直下の要約（visual_contract）
         pass  # diff: source credit not shown (RULES 2)
         pass  # diff: source URL not shown (RULES 2)
+        if item.get("counter_label"):
+            d.text((1230, 46), str(item["counter_label"]), font=_font(str(font_path),24), fill="#345577", anchor="rm")
         d.text(tuple(zones["voice_credit"]),str(presentation["voice_credit"]),font=small,fill="#F2F6FA")  # diff: legible on blackboard
         _rgb = _src_rgb(str(src)); _w, _h = _rgb.size
         _zc = float(item.get("zoom_crop", 0.12))  # FIX v1.5b: diagrams keep their text (crop <= 4%)
@@ -549,6 +553,8 @@ def build_visual_layers(profile, presentation, presentation_path, font_path):
         _tx=layout.get("title_xy")
         _tp=tuple(_tx) if _tx else tuple(zones["title"])
         d.text(_tp,heading,font=title_font,fill=layout.get("header_text_color","#FFFFFF"),**({"anchor":"lm"} if _tx else {}))
+        if item.get("counter_label"):
+            d.text((1230, 46), str(item["counter_label"]), font=_font(str(font_path),24), fill="#345577", anchor="rm")
         d.text(tuple(zones["voice_credit"]),str(presentation["voice_credit"]),font=small,fill="#F2F6FA")
         draw_summary_block(d,layout,font_path,item)  # 本番の経路（layered）でも要約を描く
         panel=Image.new("RGBA",(pw,ph),(0,0,0,0)); pd=ImageDraw.Draw(panel)
@@ -647,7 +653,7 @@ def render(args):
 
     for _v in (presentation.get("visuals") or []):
         _spoken=[x["caption_text"] for x in timing["records"] if x.get("caption_text")]  # 全編のナレーションと比べる
-        _errs=check_summary(_v.get("summary"),_spoken)+check_summary([_v["translation"]] if (_v.get("translation") or "").strip() else [],_spoken)
+        _errs=check_summary(_v.get("summary"),_spoken)
         if _errs: raise ValueError("中央パネルの表示契約違反 %s: %s" % (_v.get("id"), "; ".join(_errs)))
     sidebar_cfg=presentation.get("agenda_sidebar")  # 献立（右端の縦型）。設定が無い動画には出さない
     sidebar_state,sidebar_pose=build_agenda_sidebar(sidebar_cfg,args.font,layout["width"],layout["height"],supersample=int((profile.get("performance") or {}).get("agenda_supersample",1))) if sidebar_cfg else (None,None)
@@ -669,7 +675,6 @@ def render(args):
             head=_secname.get(r0.get("scene_id")) if r0.get("scene_id")!=(_prev or {}).get("scene_id") else None
             _sw.append((st,head,card))
         _prev=r0
-    _trans={v["id"]:v["translation"] for v in (presentation.get("visuals") or []) if (v.get("translation") or "").strip()}  # R41：海外の引用の訳の帯。ナレーションと重複する訳は下の検査で拒否
     out=args.output; out.parent.mkdir(parents=True,exist_ok=True)
     audio_fast=profile.get("audio_fast_path") or {}
     gain_db=float(audio_fast.get("fixed_gain_db",0.0))
@@ -688,6 +693,7 @@ def render(args):
              "-ss",str(args.start),"-i",str(args.audio),"-vf","scale=640:360:flags=lanczos","-c:v","libx264","-preset","medium","-threads","2","-b:v","144k","-maxrate","168k","-bufsize","288k","-pix_fmt","yuv420p",
              "-af",audio_filter,"-c:a","aac","-b:a","48k","-ar","48000","-movflags","+faststart","-shortest",str(out)]
     character_positions={}; character_frame_evidence={}
+    translation_cards = TranslationCards(presentation.get("visuals", []), layout, args.font)
     video_panels = VideoPanels(presentation.get("visuals", []))
     with closing(video_panels), encoder_process(cmd, flush_timeout=None) as process:
 
@@ -774,7 +780,8 @@ def render(args):
             if r: last_sb_scene=r.get("scene_id")  # 話している行の章。候補（次の行）は使わない（v2e、2026-10-15）
             sb_scene=last_sb_scene if sidebar_state else None
             sb_pose=sidebar_pose(t+args.start,sb_scene) if sb_scene is not None else None
-            frame_key=(beat_key,speaker,expression,mouth,caption,tuple((x[0],x[2],x[3],x[4]) for x in char_states),bump,sb_scene,sb_pose)
+            translation_state = translation_cards.state(current_visual, t-r["start"] if r else 0, r["end"]-r["start"] if r else 1)
+            frame_key=(translation_state,beat_key,speaker,expression,mouth,caption,tuple((x[0],x[2],x[3],x[4]) for x in char_states),bump,sb_scene,sb_pose)
             frame_key += (motion_cache_state(motion_timeline,t+args.start,FPS),)
             if current_visual in video_panels.paths:
                 frame_key += (i,)
@@ -801,6 +808,7 @@ def render(args):
                 frame.paste(_pimg,_pxy,_pimg); d=ImageDraw.Draw(frame)
             else:
                 frame=backgrounds[beat_key].copy(); d=ImageDraw.Draw(frame)
+            translation_cards.draw(frame, translation_state)
             motion = active_diagram(motion_timeline,t+args.start)
             if motion is not None and MOTION_TEXT_IN_VISUAL_SLOT:  # R69：図解の文字は枠に載せない
                 ex1,ey1,ex2,ey2=layout['zones']['evidence']
@@ -827,7 +835,6 @@ def render(args):
                     character_frame_evidence[name]={"rect":[x,y,x+char_img.width,y+max(1,char_img.height//2)]}
 
             draw_switch_overlay(frame,d,t,_sw,_band_font,W)
-            if r and r.get("visual_id") in _trans: draw_translation(d,layout,_trans[r["visual_id"]],_band_font)
             if r and layout.get("caption_layout")=="compact_v18":
                 draw_caption_compact(d,W,layout,args.font,speaker,caption,emph=[t for t in (r.get("caption_emphasis_terms") or []) if t])
             elif r:

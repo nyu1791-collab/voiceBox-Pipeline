@@ -29,7 +29,7 @@
         225,
         92,
         1055,
-        400
+        350
       ],
       "source_credit": [
         238,
@@ -147,7 +147,7 @@
     "quality_master_fps": 24,
     "reason": "USER_REQUESTED_360P_24_FPS_OUTPUT",
     "visual_beat_seconds": 10,
-    "visual_entry_seconds": 1.5,
+    "visual_entry_seconds": 0.45,
     "visual_nudge_seconds": 2.5,
     "visual_nudge_scale": 0.02,
     "agenda_supersample": 4,

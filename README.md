@@ -118,3 +118,7 @@ OpenCodeの場合は、動画workflowでも `script_provider:opencode` を明示
 必読は [docs/RULES.md](docs/RULES.md) だけ。ツールの由来と条件は [THIRD_PARTY.md](THIRD_PARTY.md)。過去のVM動作記録は [docs/RUN_RESULT.md](docs/RUN_RESULT.md) です。
 
 資料ごとに複数のスクショを切り替える場合、`capture_overrides.<source_id>.crops` の各項目に `name`・引用段落の `text`・対応する台詞IDの `line_ids` を指定します。例：`{"name":"typing","text":"TypeIs","line_ids":[6]}`。同じ出典の台詞だけに割り当てられ、指定段落が見つからない場合は制作を停止します。
+
+英語の証拠画像は `visuals` に `source_language: "en"` と `translation` を指定します。引用段落を自動撮影する入力では、`capture_overrides.<source_id>.crops` の各項目へ同じ2項目を設定できます。日本語訳は画像直下に28pxで表示し、長文は全文を保ってページを切り替えます。英語と明示された画像で訳がなければ停止します。台詞字幕とは独立した表示です。
+
+BGMは `audio.bgm` のローカル音源を使用し、`bgm_gain_db`（既定−24dB）、`ducking`（既定true）、`bgm_fade_seconds`（既定1.5秒）で調整します。配布元のライセンスと必要なクレジットは作品の概要欄に保持してください。音声結合は映像をコピーし、最後のフレームまで保持します。
