@@ -1,0 +1,45 @@
+name: YouTube Search Research
+
+on:
+  workflow_dispatch:
+    inputs:
+      query:
+        description: '検索する語句（日本語）'
+        required: true
+        type: string
+      max_results:
+        description: '検索結果数（1〜5、出力サイズ上限）'
+        required: true
+        default: '5'
+        type: string
+
+permissions:
+  contents: read
+
+concurrency:
+  group: youtube-search-research
+  cancel-in-progress: false
+
+jobs:
+  search:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Search public YouTube metadata
+        env:
+          YOUTUBE_API_KEY: ${{ secrets.YOUTUBE_API_KEY }}
+          YOUTUBE_QUERY: ${{ inputs.query }}
+          YOUTUBE_MAX_RESULTS: ${{ inputs.max_results }}
+          OUTPUT_DIR: ${{ runner.temp }}/youtube-research
+        run: python tools/youtube_search.py "$YOUTUBE_QUERY" "$YOUTUBE_MAX_RESULTS" "$OUTPUT_DIR/youtube-search.json"
+      - uses: actions/upload-artifact@v4
+        if: success()
+        with:
+          name: youtube-search-${{ github.run_id }}
+          path: ${{ runner.temp }}/youtube-research/youtube-search.json
+          if-no-files-found: error
+          retention-days: 7
