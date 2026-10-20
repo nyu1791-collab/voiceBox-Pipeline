@@ -113,6 +113,10 @@ OpenCodeの場合は、動画workflowでも `script_provider:opencode` を明示
 
 `RESEARCH_READY` は情報収集済み、`PROJECT_READY` は台本と撮影素材の準備済み。MP4完成とは区別します。これらのAPIによる新規台本生成・任意ニュース全体の正確性まで、ローカルの結合テストが保証するものではありません。YouTubeへの自動投稿は含めません。
 
+## AgentRouterのコーディングAPI接続
+
+[AgentRouter Coding Connection](https://github.com/nyu1791-collab/voiceBox-Pipeline/actions/workflows/check-agentrouter.yml) で、Secret `AGENTROUTER_API_KEY` と明示選択したモデルを使い、公式OpenCodeクライアントから接続を確認できます。キー発行・設定・利用枠・現時点の確認状態は [接続手順](docs/AGENTROUTER_GITHUB.md) を参照してください。
+
 ## YouTubeの公開動画を検索
 
 [Actions → YouTube Search Research](https://github.com/nyu1791-collab/voiceBox-Pipeline/actions/workflows/youtube-research.yml) から手動実行できます。日本語の検索語と結果数（1〜5件）を入力すると、YouTube Data API v3で公開動画のタイトル・チャンネル・公開日・説明文を取得し、`youtube-search.json` をArtifactsへ7日間保存します。APIキーはリポジトリSecret `YOUTUBE_API_KEY` から読み、出力には含めません。`search.list` は1回100クォータ単位を消費するため、手動実行に限定し、定期実行や自動投稿は設定していません。

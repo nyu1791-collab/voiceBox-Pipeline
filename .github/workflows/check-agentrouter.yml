@@ -1,0 +1,46 @@
+name: AgentRouter Coding Connection
+
+on:
+  workflow_dispatch:
+    inputs:
+      model:
+        description: 'AgentRouter側で利用できるモデルID（提供可否はアカウントのモデル一覧を確認）'
+        type: string
+        required: true
+        default: gpt-6.1-sol
+
+permissions:
+  contents: read
+
+concurrency:
+  group: agentrouter-connection
+  cancel-in-progress: false
+
+jobs:
+  check:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 8
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Install official OpenCode coding client
+        run: npm install --global opencode-ai@1.19.0
+      - name: Check selected AgentRouter model
+        env:
+          AGENTROUTER_API_KEY: ${{ secrets.AGENTROUTER_API_KEY }}
+          AGENTROUTER_MODEL: ${{ inputs.model }}
+        run: python tools/check_agentrouter.py --allow-api --model "$AGENTROUTER_MODEL" --output "$RUNNER_TEMP/agentrouter-connection.json"
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: agentrouter-connection-${{ github.run_id }}
+          path: ${{ runner.temp }}/agentrouter-connection.json
+          if-no-files-found: error
+          retention-days: 7

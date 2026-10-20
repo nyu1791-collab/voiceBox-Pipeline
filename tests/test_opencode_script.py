@@ -223,3 +223,69 @@ def test_provided_script_and_research_only_never_call_opencode(tmp_path, monkeyp
     with pytest.raises(ReachedCapture):
         prepare_project.prepare({'provider': 'opencode', 'model': 'paid-model'},
                                 tmp_path / 'provided', script, allow_api=True)
+
+
+def test_agentrouter_native_session_uses_only_selected_provider(native_cli, monkeypatch):
+    from tools.check_agentrouter import check_connection
+    events = response_events('{"fixed_return":"a + b"}')
+    events[1]['properties']['info'].update(providerID='agentrouter', modelID='gpt-6.1-sol')
+    events[4]['properties']['part']['cost'] = .1
+    record, pid, _ = native_cli(events)
+    monkeypatch.setenv('AGENTROUTER_API_KEY', 'selected-agentrouter-key')
+    monkeypatch.setenv('GITHUB_TOKEN', 'unrelated-secret')
+    monkeypatch.setenv('OPENCODE_API_KEY', 'unrelated-secret')
+    receipt = check_connection('gpt-6.1-sol', allow_api=True)
+    assert receipt['status'] == 'CONNECTED' and receipt['billing_verified'] is False
+    assert receipt['catalog_cost'] == .1  # Routing is not a claim of free usage.
+    data = json.loads(record.read_text())
+    assert data['payload']['model'] == {'providerID': 'agentrouter', 'modelID': 'gpt-6.1-sol'}
+    assert 'AGENTROUTER_API_KEY' in data['env_keys']
+    assert 'OPENCODE_API_KEY' not in data['env_keys'] and 'GITHUB_TOKEN' not in data['env_keys']
+    assert not Path(data['home']).exists()
+    with pytest.raises(ProcessLookupError):
+        os.kill(int(pid.read_text()), 0)
+
+
+def test_agentrouter_configuration_has_fixed_endpoint_and_no_inline_secret(tmp_path):
+    env = opencode_script._environment(tmp_path, 'secret-marker', 'local-password',
+                                      provider='agentrouter', model='gpt-6.1-sol')
+    config = json.loads(env['OPENCODE_CONFIG_CONTENT'])
+    assert config['enabled_providers'] == ['agentrouter']
+    assert config['model'] == config['small_model'] == 'agentrouter/gpt-6.1-sol'
+    options = config['provider']['agentrouter']['options']
+    assert options['baseURL'] == 'https://agentrouter.org/v1'
+    assert options['apiKey'] == '{env:AGENTROUTER_API_KEY}' and options['maxRetries'] == 0
+    assert 'secret-marker' not in env['OPENCODE_CONFIG_CONTENT']
+
+
+@pytest.mark.parametrize('model', ['../other', 'gpt-6.1-sol\nother', '', 'x'*129])
+def test_agentrouter_invalid_ids_never_start_client(monkeypatch, model):
+    from tools import check_agentrouter
+    monkeypatch.setattr(check_agentrouter, '_run_session', lambda *a, **k: pytest.fail('No call expected'))
+    with pytest.raises(ValueError, match='model ID'):
+        check_agentrouter.check_connection(model, allow_api=True)
+
+
+def test_agentrouter_needs_own_key_and_explicit_call(monkeypatch):
+    from tools import check_agentrouter
+    monkeypatch.delenv('AGENTROUTER_API_KEY', raising=False)
+    monkeypatch.setenv('OPENCODE_API_KEY', 'not-an-agentrouter-key')
+    with pytest.raises(ValueError, match='--allow-api'):
+        check_agentrouter.check_connection('gpt-6.1-sol')
+    with pytest.raises(ValueError, match='AGENTROUTER_API_KEY'):
+        check_agentrouter.check_connection('gpt-6.1-sol', allow_api=True)
+
+
+def test_agentrouter_failure_receipt_excludes_raw_provider_error(tmp_path, monkeypatch, capsys):
+    from tools import check_agentrouter
+    path = tmp_path / 'receipt.json'
+    monkeypatch.setenv('AGENTROUTER_API_KEY', 'secret-marker')
+    def fail(*a, **k):
+        raise RuntimeError('Authorization: Bearer secret-marker')
+    monkeypatch.setattr(check_agentrouter, '_run_session', fail)
+    monkeypatch.setattr(sys, 'argv', ['check_agentrouter', '--allow-api', '--output', str(path)])
+    assert check_agentrouter.main() == 1
+    receipt = json.loads(path.read_text())
+    assert receipt['status'] == 'FAILED' and receipt['credential_configured'] is True
+    captured = capsys.readouterr()
+    assert 'secret-marker' not in path.read_text() + captured.out + captured.err

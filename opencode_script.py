@@ -19,7 +19,7 @@ CLI_VERSION = '1.19.0'
 ROOT = Path(__file__).resolve().parent
 
 
-def _environment(directory, key, password):
+def _environment(directory, key, password, *, provider='opencode', model=FREE_MODEL):
     # Keep network trust/proxy configuration, but do not expose other providers'
     # credentials, GitHub tokens, local auth files or user plugins to this session.
     keep = {'PATH', 'LANG', 'LC_ALL', 'SYSTEMROOT', 'SSL_CERT_FILE', 'SSL_CERT_DIR',
@@ -27,24 +27,34 @@ def _environment(directory, key, password):
             'HTTP_PROXY', 'HTTPS_PROXY', 'ALL_PROXY', 'NO_PROXY',
             'http_proxy', 'https_proxy', 'all_proxy', 'no_proxy'}
     env = {k: v for k, v in os.environ.items() if k in keep}
-    env.update(HOME=str(directory), OPENCODE_API_KEY=key,
+    env.update(HOME=str(directory),
                XDG_CONFIG_HOME=str(directory / 'config'), XDG_DATA_HOME=str(directory / 'data'),
                XDG_CACHE_HOME=str(directory / 'cache'), XDG_STATE_HOME=str(directory / 'state'),
                OPENCODE_SERVER_USERNAME='voicebox', OPENCODE_SERVER_PASSWORD=password,
                OPENCODE_DISABLE_AUTOUPDATE='true', OPENCODE_DISABLE_PROJECT_CONFIG='true')
-    env['OPENCODE_CONFIG_CONTENT'] = json.dumps({
-        'model': 'opencode/' + FREE_MODEL, 'small_model': 'opencode/' + FREE_MODEL,
-        'enabled_providers': ['opencode'], 'share': 'disabled', 'snapshot': False,
+    if provider not in ('opencode', 'agentrouter'):
+        raise ValueError('Unsupported OpenCode provider')
+    env['OPENCODE_API_KEY' if provider == 'opencode' else 'AGENTROUTER_API_KEY'] = key
+    config = {
+        'model': provider + '/' + model, 'small_model': provider + '/' + model,
+        'enabled_providers': [provider], 'share': 'disabled', 'snapshot': False,
         'autoupdate': False, 'compaction': {'auto': False, 'prune': False},
         # "ask" keeps the official tool catalog but authorizes no tool execution.
         # We never approve permissions, and terminate on any tool/permission event.
         'permission': 'ask', 'agent': {'title': {'disable': True},
                                      'summary': {'disable': True},
-                                     'compaction': {'disable': True}}})
+                                     'compaction': {'disable': True}}}
+    if provider == 'agentrouter':
+        config['provider'] = {'agentrouter': {
+            'npm': '@ai-sdk/openai-compatible', 'name': 'AgentRouter',
+            'options': {'baseURL': 'https://agentrouter.org/v1',
+                        'apiKey': '{env:AGENTROUTER_API_KEY}', 'maxRetries': 0},
+            'models': {model: {'name': model, 'tool_call': False}}}}
+    env['OPENCODE_CONFIG_CONTENT'] = json.dumps(config)
     return env
 
 
-def _consume(events, session_id):
+def _consume(events, session_id, *, provider='opencode', model=FREE_MODEL, free_only=True):
     texts, starts, finish, tokens, cost = {}, 0, None, None, None
     assistants = set()
     for raw in events:
@@ -70,7 +80,7 @@ def _consume(events, session_id):
         if kind == 'permission.asked':
             raise RuntimeError('OpenCode requested a tool permission; generation stopped')
         if kind == 'message.updated' and info.get('role') == 'assistant':
-            if info.get('providerID') != 'opencode' or info.get('modelID') != FREE_MODEL:
+            if info.get('providerID') != provider or info.get('modelID') != model:
                 raise RuntimeError('OpenCode returned an unexpected provider or model')
             assistants.add(info['id'])
         if kind != 'message.part.updated' or part.get('messageID') not in assistants:
@@ -87,7 +97,7 @@ def _consume(events, session_id):
             finish, tokens, cost = part.get('reason'), part.get('tokens'), part.get('cost')
             if finish != 'stop':
                 raise ValueError('OpenCode output was incomplete')
-            if cost is not None and cost != 0:
+            if free_only and cost is not None and cost != 0:
                 raise RuntimeError('OpenCode reported a nonzero catalog cost')
     if starts != 1 or finish != 'stop':
         raise ValueError('OpenCode output was incomplete')
@@ -97,13 +107,19 @@ def _consume(events, session_id):
         raise ValueError('OpenCode did not return valid JSON') from None
     if not isinstance(script, dict):
         raise ValueError('OpenCode must return a JSON object')
-    return script, {'provider': 'opencode', 'model': FREE_MODEL, 'method': 'official-cli-server',
+    return script, {'provider': provider, 'model': model, 'method': 'official-cli-server',
                     'cli_version': CLI_VERSION, 'request_count': starts,
                     'finish_reason': finish, 'tokens': tokens, 'catalog_cost': cost}
 
 
 def generate_opencode_script(prompt, key, *, timeout=180):
     """Use native OpenCode sessions; never forge a client identity at the gateway."""
+    return _run_session(prompt, key, timeout=timeout)
+
+
+def _run_session(prompt, key, *, timeout=180, provider='opencode', model=FREE_MODEL,
+                 free_only=True):
+    """Isolated official CLI session with one provider and no approved tools."""
     if not key:
         raise ValueError('Selected script API credential is not configured')
     executable = shutil.which('opencode')
@@ -112,7 +128,7 @@ def generate_opencode_script(prompt, key, *, timeout=180):
     with tempfile.TemporaryDirectory(prefix='voicebox-opencode-') as temporary:
         directory = Path(temporary)
         password = secrets.token_urlsafe(32)
-        env = _environment(directory, key, password)
+        env = _environment(directory, key, password, provider=provider, model=model)
         try:
             version = subprocess.run([executable, '--version'], env=env, cwd=directory,
                                      capture_output=True, text=True, timeout=15, check=True)
@@ -164,14 +180,15 @@ def generate_opencode_script(prompt, key, *, timeout=180):
             with request('/event') as events:
                 rules = (ROOT / 'docs/RULES.md').read_text()
                 with request('/session/' + session_id + '/prompt_async', {
-                    'agent': 'build', 'model': {'providerID': 'opencode', 'modelID': FREE_MODEL},
+                    'agent': 'build', 'model': {'providerID': provider, 'modelID': model},
                     'system': prompt['system'] + '\nNo tools. Return only the requested JSON object, '
                               'without Markdown fences or explanatory text.\n'
                               '制作ルール全文:\n' + rules,
                     'parts': [{'type': 'text', 'text': prompt['user'] +
                                '\n出力はJSONオブジェクトのみ。コードフェンス・説明文・ツール呼出しは禁止。'}]}):
                     pass
-                return _consume(events, session_id)
+                return _consume(events, session_id, provider=provider, model=model,
+                                free_only=free_only)
         except (OSError, ValueError, KeyError) as error:
             # Preserve only our own validation messages; never propagate local
             # server bodies, input JSON, Authorization headers or API credentials.
