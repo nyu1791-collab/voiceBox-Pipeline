@@ -23,14 +23,22 @@ def official_url(url, hosts):
 
 def select_official(pack, hosts, since, until, maximum=4):
     candidates = {}
+    known = {}
     for row in pack['sources']:
+        if row.get('extraction_status'):
+            known[row['url']] = row
+            known[row.get('final_url', row['url'])] = row
         for url in [row.get('final_url', row['url']), *row.get('links', [])]:
             if official_url(url, hosts):
                 candidates.setdefault(url, {'id': source_id(url), 'url': url, 'title': '',
                                            'discovered_from': row['url']})
     # Bound requests, preserve provenance, and never use aggregator text as primary evidence.
+    def resolve(candidate):
+        cached = known.get(candidate['url'])
+        # Reuse fetched bodies and failures; a discovery failure is not silently retried.
+        return {**candidate, **cached} if cached is not None else extract_source(candidate)
     with ThreadPoolExecutor(max_workers=4) as pool:
-        rows = list(pool.map(extract_source, list(candidates.values())[:20]))
+        rows = list(pool.map(resolve, list(candidates.values())[:20]))
     accepted, rejected = [], []
     for row in rows:
         reason = None

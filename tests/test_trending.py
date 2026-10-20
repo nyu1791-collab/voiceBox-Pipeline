@@ -26,6 +26,19 @@ def test_official_sources_reject_spoofs_redirects_old_and_undated(monkeypatch):
         'OUTSIDE_DATE_WINDOW', 'PUBLICATION_DATE_UNAVAILABLE', 'REDIRECT_OUTSIDE_OFFICIAL_HOSTS'}
 
 
+def test_discovered_bodies_and_failures_are_not_fetched_again(monkeypatch):
+    rows = [{'id': 's1', 'url': 'https://official.test/new', 'extraction_status': 'EXTRACTED',
+             'article_published': '2026-10-20', 'body_sha256': 'abc'},
+            {'id': 's2', 'url': 'https://official.test/blocked', 'extraction_status': 'FAILED'}]
+    def no_fetch(_):
+        pytest.fail('discovery results must be reused without retry')
+    monkeypatch.setattr(trending, 'extract_source', no_fetch)
+    accepted, rejected = trending.select_official({'sources': rows}, ['official.test'],
+                                                   date(2026,10,14), date(2026,10,20))
+    assert accepted[0]['id'] == 's1'
+    assert rejected[0]['rejection_reason'] == 'BODY_UNAVAILABLE'
+
+
 @pytest.mark.parametrize('capture_success', [True, False])
 def test_only_captured_paragraphs_reach_one_model_call(tmp_path, monkeypatch, capture_success):
     from PIL import Image
