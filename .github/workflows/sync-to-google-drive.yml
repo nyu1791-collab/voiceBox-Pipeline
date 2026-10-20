@@ -1,0 +1,54 @@
+name: Sync repository to Google Drive
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: google-drive-repository-sync
+  cancel-in-progress: false
+
+jobs:
+  sync:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Create source snapshot
+        env:
+          REPOSITORY: ${{ github.event.repository.name }}
+          COMMIT: ${{ github.sha }}
+        run: |
+          git archive --format=zip \
+            --prefix="${REPOSITORY}-${COMMIT}/" \
+            --output="$RUNNER_TEMP/repository.zip" \
+            "$COMMIT"
+
+      - name: Get Google Drive access token
+        id: google-auth
+        uses: google-github-actions/auth@v2
+        with:
+          credentials_json: ${{ secrets.GOOGLE_DRIVE_SERVICE_ACCOUNT_JSON }}
+          token_format: access_token
+          access_token_scopes: https://www.googleapis.com/auth/drive.file
+
+      - name: Upload snapshot to Google Drive
+        env:
+          GOOGLE_DRIVE_ACCESS_TOKEN: ${{ steps.google-auth.outputs.access_token }}
+          GOOGLE_DRIVE_FOLDER_ID: ${{ secrets.GOOGLE_DRIVE_FOLDER_ID }}
+          REPOSITORY: ${{ github.event.repository.name }}
+          COMMIT: ${{ github.sha }}
+        run: |
+          set -euo pipefail
+          test -n "$GOOGLE_DRIVE_ACCESS_TOKEN"
+          test -n "$GOOGLE_DRIVE_FOLDER_ID"
+          name="${REPOSITORY}-${COMMIT}.zip"
+          curl --fail-with-body --silent --show-error \
+            -X POST \
+            -H "Authorization: Bearer $GOOGLE_DRIVE_ACCESS_TOKEN" \
+            -F "metadata={\"name\":\"$name\",\"parents\":[\"$GOOGLE_DRIVE_FOLDER_ID\"]};type=application/json;charset=UTF-8" \
+            -F "file=@$RUNNER_TEMP/repository.zip;type=application/zip" \
+            'https://www.googleapis.com/upload/drive/v3/files?uploadType=multipart&supportsAllDrives=true&fields=id,name,webViewLink'

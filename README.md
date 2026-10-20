@@ -51,6 +51,10 @@ materials/   # 指定画像・SVG・動画・任意BGM
 
 標準は1280×720・30fps、H.264 CRF20、AAC 48kHz mono。字幕はZen Maru Gothic Medium 36px・最大3行。声はVOICEVOX style3/2、原音話速1.10・後段1.15。字幕本文を保持し、長文は時間方向に分けます。静止画だけの既存台本も同じ入口で動きます。
 
+## Google Driveへリポジトリを同期
+
+GitHub Actionsから追跡対象ファイルのスナップショットをGoogle Driveへ送れます。初回設定と実行方法は[Google Drive同期手順](docs/GOOGLE_DRIVE_SYNC.md)を参照してください。
+
 ## VM・Linuxでも実行
 
 既存VMでは `./zundamon-video setup` で保存済みエンジンと素材を登録し、`./zundamon-video run /path/project.json --out /path/new-output`。既存サービス・完成動画・別作業は上書きしません。
