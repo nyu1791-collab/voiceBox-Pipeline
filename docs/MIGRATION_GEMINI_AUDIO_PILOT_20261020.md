@@ -30,6 +30,7 @@
 - リポジトリのActions Secrets一覧では `GEMINI_API_KEY`、`YOUTUBE_API_KEY`、`OPENCODE_API_KEY` の名前が確認できた（値は表示されていない）。
 - Google Cloudの `voice-box-512208` プロジェクトでは、現在のYouTube Data APIキーが会話に表示された旧キーとは別に2026-10-20 11:23 UTCに作成され、`youtube.googleapis.com` のみにAPI制限されている。GitHubの `YOUTUBE_API_KEY` Secretも同時刻に更新されている。キー値は取得・表示していない。
 - 手動検索ワークフロー `.github/workflows/youtube-research.yml` と `tools/youtube_search.py` を追加。公開動画の検索結果を最大5件JSON Artifactに保存し、自動実行・投稿はしない。YouTube `search.list` は1回100クォータ単位を使う。
+- PR [#3](https://github.com/nyu1791-collab/voiceBox-Pipeline/pull/3) はCI成功後にmainへマージ済み。Actions run `39429835341` を `VOICEVOX`・1件で実行し、成功・Artifact取得・JSON形式・APIキー非掲載を確認した。
 
 ## 次に実装する内容
 
@@ -53,9 +54,9 @@
 
 ## 認証と秘密情報の扱い
 
-- 会話中にCloud Shell出力へ旧YouTube APIキーの値が表示されていた。Google Cloud側には別IDの新しいキーが作成され、GitHub Secretも更新されているため、旧キーの状態を確認し、残っていれば無効化・削除する。新しいキーの値はこの文書にもGitにも転記していない。
+- 会話中にCloud Shell出力へ旧YouTube APIキーの値が表示されていた。Google Cloudの有効キー一覧では別IDのYouTube制限付きキーのみ確認でき、GitHub Secretも新キー作成直後に更新されている。旧キー値はこの文書にもGitにも転記していない。
 - Gemini APIをActionsから使う際は、GeminiアプリのGitHubコネクタ接続だけでは足りない。Google AI Studio等で取得したGemini APIキーを、リポジトリのActions Secret `GEMINI_API_KEY` として別途登録する。
-- YouTube API、検索API、その他のAPIキーは、最小パイロットでは登録・使用しない。具体的な機能が必要になった段階で、利用規約、課金、必要権限、キー制限を確認して追加する。
+- 音声パイロットの初回経路にYouTube APIは不要だが、別の手動YouTube検索 workflow は接続・実行確認済み。YouTube自動投稿や新たな検索API接続は含まない。具体的な機能が必要になった段階で、利用規約、課金、必要権限、キー制限を確認する。
 - GitHub CLIのOAuth権限追加やCloud IAMの変更は、その用途に必要な範囲で管理する。「全権限」を常設したり、キーやサービスアカウント資格情報をGitへ保存したりしない。
 
 ## 次の作業
