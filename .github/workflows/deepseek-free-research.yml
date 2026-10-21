@@ -1,0 +1,31 @@
+name: DeepSeek free intermediary research
+on:
+  push:
+    branches: [ops/deepseek-free-research-20261021]
+permissions:
+  contents: read
+jobs:
+  research:
+    runs-on: ubuntu-latest
+    timeout-minutes: 9
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Install official OpenCode CLI
+        run: |
+          npm install --prefix "$RUNNER_TEMP/opencode" opencode-ai@1.19.0
+          echo "$RUNNER_TEMP/opencode/node_modules/.bin" >> "$GITHUB_PATH"
+      - name: Delegate source-packet research to DeepSeek Free
+        env:
+          OPENCODE_API_KEY: ${{ secrets.OPENCODE_API_KEY }}
+        run: python3 .github/research/run_free_model_research.py
+      - uses: actions/upload-artifact@v4
+        with:
+          name: deepseek-free-intermediary-research
+          path: deepseek-research/
+          retention-days: 7
+          if-no-files-found: error
