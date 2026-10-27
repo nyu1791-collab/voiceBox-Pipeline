@@ -124,8 +124,16 @@ async def capture_targets(targets, outdir, playwright_factory=None, *, executabl
                         raise ValueError('HTTP ' + str(response.status if response else 'no response'))
                     if (urlsplit(page.url).hostname or '').startswith('consent.'):
                         raise ValueError('Consent page instead of source')
-                    if (urlsplit(url).hostname or '').endswith(('youtube.com', 'youtu.be')):
+                    youtube = (urlsplit(url).hostname or '').endswith(('youtube.com', 'youtu.be'))
+                    playback_blocked = False
+                    if youtube:
                         await page.wait_for_timeout(1200)
+                        try:
+                            player_text = (await page.locator('#movie_player').inner_text(timeout=2000)).lower()
+                            playback_blocked = ('not a bot' in player_text or
+                                                'ボットではないこと' in player_text)
+                        except Exception:
+                            pass
                     # Font readiness is bounded; analytics must not hold networkidle open.
                     try:
                         await page.wait_for_function('document.fonts.status === "loaded"', timeout=3000)
@@ -136,11 +144,15 @@ async def capture_targets(targets, outdir, playwright_factory=None, *, executabl
                     await page.screenshot(path=str(full), full_page=not all(t.get('viewport_only') for t in rows), timeout=12000)
                     for target, entry in zip(rows, entries):
                         entry.update(captured_utc=stamp, title=await page.title(),
-                                     files=[{'path': full.name, 'sha256': digest(full)}])
+                                     files=[{'path': full.name, 'sha256': digest(full)}],
+                                     playback_blocked=playback_blocked)
                         if target.get('article_region') or target.get('region_selector'):
                             region = {'name': 'article', 'found': False}
                             try:
-                                selected = await pick_article(page, target.get('region_selector'), target.get('heading'))
+                                selector = target.get('region_selector')
+                                if playback_blocked and selector == '#movie_player':
+                                    selector = 'ytd-watch-metadata, #title h1'
+                                selected = await pick_article(page, selector, target.get('heading'))
                                 await selected.scroll_into_view_if_needed(timeout=4000)
                                 box = await selected.bounding_box()
                                 if not box or box['width'] < 20 or box['height'] < 20:
@@ -150,7 +162,9 @@ async def capture_targets(targets, outdir, playwright_factory=None, *, executabl
                                         'height': min(box['height'], 700)}
                                 dst = outdir / (hashlib.sha256(target['id'].encode()).hexdigest()[:16]+'_article.png')
                                 await page.screenshot(path=str(dst), clip=clip, timeout=6000)
-                                region.update(found=True, file=dst.name, sha256=digest(dst))
+                                region.update(found=True, file=dst.name, sha256=digest(dst),
+                                              kind=('youtube_metadata' if playback_blocked else
+                                                    'youtube_player' if youtube else 'article'))
                             except Exception as exc:
                                 region['error'] = type(exc).__name__ + ': ' + str(exc)[:120]
                             entry['crops'].append(region)

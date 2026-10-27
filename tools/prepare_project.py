@@ -141,7 +141,8 @@ def prepare_gemini(request, output, started, *, executable_path=None):
         preferred = preferred or next(iter(found), None)
         if not preferred and capture.get('files'):
             original = capture['files'][0]
-            preferred = {'name': 'page', 'file': original['path'], 'sha256': original['sha256']}
+            preferred = {'name': 'page', 'file': original['path'], 'sha256': original['sha256'],
+                         'kind': 'page_playback_blocked' if capture.get('playback_blocked') else 'page'}
         if not preferred:
             failures.append({'id': source['id'], 'error': capture.get('error', 'capture unavailable')})
             continue
@@ -156,6 +157,7 @@ def prepare_gemini(request, output, started, *, executable_path=None):
             visuals.append({'id': visual_id, 'file': 'materials/' + image['file'],
                             'source_url': source['url'], 'source_credit': source['title'],
                             'captured_utc': capture['captured_utc'], 'sha256': image['sha256'],
+                            'capture_kind': image.get('kind', 'paragraph'),
                             'source_language': specification.get('source_language'),
                             'translation': specification.get('translation', '')})
             for line_id in specification.get('line_ids', []):
@@ -182,6 +184,7 @@ def prepare_gemini(request, output, started, *, executable_path=None):
     atomic_json(output / 'project.json', project)
     result = {'status': 'PROJECT_READY', 'sources': len(pack['sources']),
               'screenshots': len({v['file'] for v in visuals}), 'capture_failures': failures,
+              'youtube_playback_blocked': sum(bool(c.get('playback_blocked')) for c in captures),
               'lines': len(project['lines']), 'provider': 'gemini', 'model': model,
               'thinking_level': 'medium', 'research_and_dialogue_calls': int(researched) + 1, **details,
               'seconds': round(time.monotonic()-started, 3), 'video_created': False}
