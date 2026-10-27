@@ -50,10 +50,15 @@ def wrap_japanese(text, font, width, strict=False):
             break
         candidates = [p for p in boundaries if p > start and font.getlength(text[start:p]) <= width]
         if not candidates:
-            if strict:
-                return None
-            result.append(text[start:])
-            break
+            # A very long unbroken word or URL still needs to fit on screen.
+            low, high = start + 1, len(text)
+            while low < high:
+                mid = (low + high + 1) // 2
+                if font.getlength(text[start:mid]) <= width:
+                    low = mid
+                else:
+                    high = mid - 1
+            candidates = [low]
         end = candidates[-1]
         result.append(text[start:end])
         start = end

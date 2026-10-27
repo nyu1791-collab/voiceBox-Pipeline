@@ -57,3 +57,11 @@ def test_closing_quote_stays_with_its_sentence():
     states = caption_states(text, FONT, layout)
     assert ''.join(states) == text
     assert all(state[0] not in '」』）】、。' for state in states)
+
+
+def test_long_unbroken_text_is_split_without_losing_text():
+    layout = json.loads((ROOT/'config/landscape_profile_v18.json').read_text())['layout']
+    text = 'A' * 300
+    states = caption_states(text, FONT, layout)
+    assert len(states) > 1
+    assert ''.join(states) == text

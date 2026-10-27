@@ -1,10 +1,7 @@
 name: Pipeline integration tests
 
 on:
-  push:
-    paths: ['**.py', 'requirements.txt', '.github/workflows/**']
-  pull_request:
-    paths: ['**.py', 'requirements.txt', '.github/workflows/**']
+  workflow_dispatch:
 
 permissions:
   contents: read

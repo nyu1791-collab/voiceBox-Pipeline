@@ -8,15 +8,28 @@ on:
         required: true
         type: string
       source_urls:
-        description: '指定する公開URL（任意・1行1件）。空欄はRSSと検索で収集'
+        description: '公開記事やYouTube動画のURL（任意・1行1件）'
         type: string
+      capture_url:
+        description: '指定した場合はYouTubeの撮影だけを実行'
+        type: string
+      image_query:
+        description: '指定した場合は関連画像の取得だけを実行'
+        type: string
+      resume_run_id:
+        description: '以前の調査・画像を再利用する実行ID（任意）'
+        type: string
+      regenerate_dialogue:
+        description: '保存した資料から台本だけを作り直す'
+        type: boolean
+        default: false
       provider:
-        description: 'noneは情報収集とプロンプト保存だけ。API利用は明示選択'
+        description: '既定はGeminiで調査・撮影・台本作成。noneは情報収集のみ'
         type: choice
-        options: [none, gemini, groq, opencode]
-        default: none
+        options: [none, gemini]
+        default: gemini
       model:
-        description: 'API選択時のモデルID。OpenCodeは deepseek-v4.1-flash-free のみ'
+        description: '空欄は gemini-3.8-flash'
         type: string
       minutes:
         description: '台本の目標分数。実尺の保証ではない'
@@ -25,29 +38,54 @@ on:
 
 permissions:
   contents: read
+  actions: read
 
 jobs:
   prepare:
     runs-on: ubuntu-24.04
-    timeout-minutes: 15
+    timeout-minutes: 30
     steps:
       - uses: actions/checkout@v4
+      - name: Reuse a saved source pack
+        if: inputs.resume_run_id != '' && inputs.capture_url == '' && inputs.image_query == ''
+        uses: actions/download-artifact@v4
+        with:
+          name: source-pack-${{ inputs.resume_run_id }}
+          path: ${{ runner.temp }}/source-pack
+          run-id: ${{ inputs.resume_run_id }}
+          github-token: ${{ github.token }}
       - uses: actions/setup-python@v5
         with:
           python-version: '3.11'
           cache: pip
-      - uses: actions/setup-node@v4
-        if: inputs.provider == 'opencode'
+      - uses: actions/cache@v4
+        if: inputs.image_query == ''
         with:
-          node-version: '22'
-      - name: Install verified official OpenCode CLI
-        if: inputs.provider == 'opencode'
-        run: npm install --global opencode-ai@1.19.0
+          path: ~/.cache/ms-playwright
+          key: playwright-chromium-1.64.0-${{ runner.os }}
       - name: Research and browser tools
+        env:
+          IMAGE_QUERY: ${{ inputs.image_query }}
+          PROVIDER: ${{ inputs.provider }}
+          RESUME_RUN_ID: ${{ inputs.resume_run_id }}
         run: |
-          python -m pip install -r requirements.txt
-          python -m playwright install --with-deps chromium
+          NEED_BROWSER=true
+          if [ -n "$IMAGE_QUERY" ]; then
+            python -m pip install 'Pillow>=10.4,<12' 'ddgs==9.16.0'
+            NEED_BROWSER=false
+          elif [ -n "$RESUME_RUN_ID" ] && [ -s "$RUNNER_TEMP/source-pack/materials/manifest.json" ] && [ -s "$RUNNER_TEMP/source-pack/materials/related/manifest.json" ]; then
+            python -m pip install 'Pillow>=10.4,<12'
+            NEED_BROWSER=false
+          elif [ "$PROVIDER" = 'gemini' ]; then
+            python -m pip install 'Pillow>=10.4,<12' 'playwright==1.64.0' 'ddgs==9.16.0'
+          else
+            python -m pip install -r requirements.txt
+          fi
+          if [ "$NEED_BROWSER" = true ]; then
+            python -m playwright install --with-deps chromium
+          fi
       - name: Collect and prepare
+        if: inputs.capture_url == '' && inputs.image_query == ''
         env:
           TOPIC: ${{ inputs.topic }}
           SOURCE_URLS: ${{ inputs.source_urls }}
@@ -55,8 +93,8 @@ jobs:
           MODEL: ${{ inputs.model }}
           MINUTES: ${{ inputs.minutes }}
           GEMINI_API_KEY: ${{ inputs.provider == 'gemini' && secrets.GEMINI_API_KEY || '' }}
-          GROQ_API_KEY: ${{ inputs.provider == 'groq' && secrets.GROQ_API_KEY || '' }}
-          OPENCODE_API_KEY: ${{ inputs.provider == 'opencode' && secrets.OPENCODE_API_KEY || '' }}
+          YOUTUBE_STORAGE_STATE: ${{ secrets.YOUTUBE_STORAGE_STATE }}
+          REGENERATE_DIALOGUE: ${{ inputs.regenerate_dialogue }}
         run: |
           python - <<'PY'
           import json, os
@@ -65,9 +103,45 @@ jobs:
           request = {'topic': os.environ['TOPIC'], 'provider': os.environ['PROVIDER'],
                      'model': os.environ['MODEL'], 'minutes': float(os.environ['MINUTES']),
                      'urls': os.environ.get('SOURCE_URLS', '').splitlines()}
-          result = prepare(request, Path(os.environ['RUNNER_TEMP'])/'source-pack',
-                           allow_api=request['provider'] != 'none')
+          output = Path(os.environ['RUNNER_TEMP'])/'source-pack'
+          result = prepare(request, output,
+                           allow_api=request['provider'] != 'none',
+                           regenerate_dialogue=os.environ.get('REGENERATE_DIALOGUE') == 'true')
           print(json.dumps(result, ensure_ascii=False))
+          PY
+      - name: Capture YouTube
+        if: inputs.capture_url != '' && inputs.image_query == ''
+        env:
+          VIDEO_URL: ${{ inputs.capture_url }}
+          YOUTUBE_STORAGE_STATE: ${{ secrets.YOUTUBE_STORAGE_STATE }}
+        run: |
+          python - <<'PY'
+          import asyncio, json, os
+          from pathlib import Path
+          from gemini_workflow import youtube_video
+          from renderer.material_capture import capture_targets
+          url = os.environ['VIDEO_URL']
+          if not youtube_video(url):
+              raise ValueError('公開YouTube動画のURLを指定してください')
+          result = asyncio.run(capture_targets([{'id': 'youtube', 'url': url, 'viewport_only': True,
+              'article_region': True, 'region_selector': '#movie_player'}],
+              Path(os.environ['RUNNER_TEMP'])/'source-pack', retry_delays=()))
+          print(json.dumps(result, ensure_ascii=False))
+          PY
+      - name: Collect related images
+        if: inputs.image_query != ''
+        env:
+          IMAGE_QUERY: ${{ inputs.image_query }}
+        run: |
+          python - <<'PY'
+          import json, os
+          from pathlib import Path
+          from image_search import collect_related_images
+          from pipeline import atomic_json
+          root = Path(os.environ['RUNNER_TEMP'])/'source-pack'
+          result = collect_related_images(os.environ['IMAGE_QUERY'], root/'materials/related')
+          atomic_json(root/'materials/related/manifest.json', result)
+          print(json.dumps({'images': len(result['images']), 'errors': result['errors']}, ensure_ascii=False))
           PY
       - uses: actions/upload-artifact@v4
         if: always()

@@ -36,7 +36,7 @@ def test_translation_never_silently_overlaps_captions():
 
 
 @pytest.mark.parametrize('translation', [None, '', '   '])
-def test_english_evidence_requires_translation_before_render(tmp_path, translation):
+def test_english_evidence_without_translation_can_continue(tmp_path, translation):
     import json
     from pipeline import load_project
     image = tmp_path / 'source.png'
@@ -46,5 +46,5 @@ def test_english_evidence_requires_translation_before_render(tmp_path, translati
                             'translation': translation}]}
     path = tmp_path / 'project.json'
     path.write_text(json.dumps(project, ensure_ascii=False))
-    with pytest.raises(ValueError, match='English evidence requires'):
-        load_project(path)
+    loaded = load_project(path)
+    assert loaded['visuals'][0]['translation'] == (translation if translation is not None else '')

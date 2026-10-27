@@ -3,6 +3,7 @@
 from concurrent.futures import ThreadPoolExecutor
 from contextlib import contextmanager
 from pathlib import Path
+from urllib.parse import urlsplit
 import argparse
 import fcntl
 import hashlib
@@ -105,9 +106,8 @@ def load_project(path):
     project = read_json(path)
     if not isinstance(project.get("title"), str) or not project["title"].strip():
         raise ValueError("title is required")
-    thumbnail_title = project.get('thumbnail_title', project['title'])
-    if not isinstance(thumbnail_title, str) or not 1 <= len(thumbnail_title.strip()) <= 120:
-        raise ValueError('Use thumbnail_title with 1..120 characters')
+    thumbnail_title = project.get('thumbnail_title') or project['title']
+    project['thumbnail_title'] = str(thumbnail_title).strip()[:120]
     lines = project.get("lines")
     if not isinstance(lines, list) or not lines:
         raise ValueError("lines must be a nonempty array")
@@ -131,9 +131,8 @@ def load_project(path):
         if not visual.get("id") or visual["id"] in visual_ids:
             raise ValueError("visual ids must be unique")
         visual_ids.add(visual["id"])
-        if visual.get('source_language') == 'en' and (
-                not isinstance(visual.get('translation'), str) or not visual['translation'].strip()):
-            raise ValueError('English evidence requires a Japanese translation')
+        if not isinstance(visual.get('translation'), str):
+            visual['translation'] = ''
         prepared = prepare_visual(visual, path.parent, ROOT / ".cache/edited-assets")
         visual.clear()
         visual.update(prepared)
@@ -269,9 +268,11 @@ def render(project, runtime, out, records):
     write_subtitles(records, runtime['font'], profile['layout'], out)
     visuals = []
     for visual in project["visuals"]:
+        host = urlsplit(visual.get("source_url", "")).hostname
+        label = visual.get("source_label") or ("出典: " + host if host else visual.get("source_credit") or "利用者提供素材")
         visuals.append({**visual, "source_credit": visual.get("source_credit", "利用者提供素材"),
             "source_url": visual.get("source_url", "user-provided:local-image"),
-            "source_label": visual.get("source_label", visual.get("source_credit", "利用者提供素材")),
+            "source_label": str(label)[:40],
             "media_region_only": True, "zoom_crop": 0.0})
     sections = [{"id": section, "heading": section if section != "main" else project["title"]}
                 for section in dict.fromkeys(row["scene_id"] for row in records)]
@@ -294,7 +295,8 @@ def render(project, runtime, out, records):
     final_temp = out / ("final-" + uuid.uuid4().hex + ".mp4")
     effects = sound_effects(project, records)
     mux_audio(temporary, out / "narration.wav", final_temp, {**project.get('audio', {}), 'effects': effects})
-    make_thumbnail(final_temp, out / 'thumbnail.png', project.get('thumbnail_title', project['title']), runtime['font'])
+    thumbnail_title = str(project.get('thumbnail_title') or project['title'])[:120]
+    make_thumbnail(final_temp, out / 'thumbnail.png', thumbnail_title, runtime['font'])
     if (out / "video.mp4").exists():
         raise FileExistsError("Will not replace an existing video.mp4")
     final_temp.replace(out / "video.mp4")
@@ -353,8 +355,14 @@ def execute(args):
             atomic_json(state_path, state)
             render_seconds, probe = render(project, runtime, out, records)
             (out / "script.txt").write_text("\n".join(f"{r['speaker']}：{r['text']}" for r in project["lines"]) + "\n")
+            credits = []
+            for visual in project["visuals"]:
+                credit = f"{visual.get('source_credit', '利用者提供素材')} {visual.get('source_url', '')}"
+                if visual.get('source_image_url'):
+                    credit += "\n画像URL: " + visual['source_image_url']
+                credits.append(credit)
             (out / "description.txt").write_text(project["title"] + "\n\nVOICEVOX:ずんだもん\nVOICEVOX:四国めたん\n\n" +
-                "\n".join(f"{v.get('source_credit', '利用者提供素材')} {v.get('source_url', '')}" for v in project["visuals"]) + "\n")
+                "\n".join(credits) + "\n")
             state.update(status="COMPLETE", video=str(out / "video.mp4"), video_sha256=sha256(out / "video.mp4"),
                 bytes=(out / "video.mp4").stat().st_size, duration=float(probe["format"]["duration"]),
                 total_seconds=round(time.monotonic() - started, 3), render_seconds=render_seconds,

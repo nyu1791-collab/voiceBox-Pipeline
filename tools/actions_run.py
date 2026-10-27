@@ -183,8 +183,12 @@ def main():
                 if (selected == 'opencode') != (request.get('provider') == 'opencode'):
                     raise ValueError('OpenCode requires matching script_provider and research-request.json provider')
                 prepared = working / 'prepared-project'
-                prepare(request, prepared, allow_api=os.environ.get('ALLOW_SCRIPT_API') == 'true',
-                        executable_path=os.environ.get('PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH'))
+                try:
+                    prepare(request, prepared, allow_api=os.environ.get('ALLOW_SCRIPT_API') == 'true',
+                            executable_path=os.environ.get('PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH'))
+                finally:
+                    if prepared.exists():
+                        shutil.copytree(prepared, output / 'source-pack')
                 project = prepared / 'project.json'
                 if not project.is_file():
                     raise ValueError('Research finished; production needs a supplied script or an explicitly enabled script API')

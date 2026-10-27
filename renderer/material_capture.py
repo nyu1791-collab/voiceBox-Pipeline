@@ -4,8 +4,10 @@ import asyncio
 import datetime
 import hashlib
 import json
+import os
 import time
 from pathlib import Path
+from urllib.parse import urlsplit
 
 try:
     from .pipeline_common import atomic_json
@@ -111,8 +113,12 @@ async def capture_targets(targets, outdir, playwright_factory=None, *, executabl
 
         async def grab(url, rows):
             async with semaphore:
-                page = await browser.new_page(viewport={'width': 1280, 'height': 900},
-                                              device_scale_factor=1)
+                youtube = (urlsplit(url).hostname or '').lower() in ('youtube.com', 'www.youtube.com', 'm.youtube.com', 'youtu.be')
+                state = os.environ.get('YOUTUBE_STORAGE_STATE') if youtube else None
+                context = await browser.new_context(viewport={'width': 1280, 'height': 900},
+                                                    device_scale_factor=1,
+                                                    storage_state=json.loads(state) if state else None)
+                page = await context.new_page()
                 retries = []
                 entries = [{'id': t['id'], 'url': url, 'captured_utc': None, 'files': [],
                             'crops': [], 'retries': retries} for t in rows]
@@ -121,6 +127,35 @@ async def capture_targets(targets, outdir, playwright_factory=None, *, executabl
                     response = await goto_with_retry(page, url, retries, retry_delays)
                     if response is None or response.status >= 400:
                         raise ValueError('HTTP ' + str(response.status if response else 'no response'))
+                    if (urlsplit(page.url).hostname or '').startswith('consent.'):
+                        raise ValueError('Consent page instead of source')
+                    playback_blocked = False
+                    if youtube:
+                        await page.wait_for_timeout(1200)
+                        try:
+                            player_text = (await page.locator('#movie_player').inner_text(timeout=2000)).lower()
+                            playback_blocked = ('not a bot' in player_text or
+                                                'ボットではないこと' in player_text)
+                        except Exception:
+                            pass
+                        if not playback_blocked:
+                            try:
+                                video = page.locator('#movie_player video').first
+                                await video.evaluate('''async v => {
+                                    v.muted = true;
+                                    await Promise.race([v.play().catch(() => {}),
+                                        new Promise(resolve => setTimeout(resolve, 2000))]);
+                                }''', timeout=4000)
+                                await page.wait_for_function('''() => {
+                                    const p = document.querySelector('#movie_player');
+                                    const v = p && p.querySelector('video');
+                                    return v && v.readyState >= 2 && v.videoWidth > 0 &&
+                                           !p.classList.contains('ad-showing');
+                                }''', timeout=8000)
+                                await page.wait_for_timeout(500)
+                                await video.evaluate('v => v.pause()')
+                            except Exception:
+                                playback_blocked = True
                     # Font readiness is bounded; analytics must not hold networkidle open.
                     try:
                         await page.wait_for_function('document.fonts.status === "loaded"', timeout=3000)
@@ -131,11 +166,17 @@ async def capture_targets(targets, outdir, playwright_factory=None, *, executabl
                     await page.screenshot(path=str(full), full_page=not all(t.get('viewport_only') for t in rows), timeout=12000)
                     for target, entry in zip(rows, entries):
                         entry.update(captured_utc=stamp, title=await page.title(),
-                                     files=[{'path': full.name, 'sha256': digest(full)}])
+                                     files=[{'path': full.name, 'sha256': digest(full)}],
+                                     playback_blocked=playback_blocked)
                         if target.get('article_region') or target.get('region_selector'):
                             region = {'name': 'article', 'found': False}
                             try:
-                                selected = await pick_article(page, target.get('region_selector'), target.get('heading'))
+                                selector = target.get('region_selector')
+                                if playback_blocked and selector == '#movie_player':
+                                    selector = 'ytd-watch-metadata, #title h1'
+                                elif youtube and selector == '#movie_player':
+                                    selector = '#movie_player video'
+                                selected = await pick_article(page, selector, target.get('heading'))
                                 await selected.scroll_into_view_if_needed(timeout=4000)
                                 box = await selected.bounding_box()
                                 if not box or box['width'] < 20 or box['height'] < 20:
@@ -145,7 +186,9 @@ async def capture_targets(targets, outdir, playwright_factory=None, *, executabl
                                         'height': min(box['height'], 700)}
                                 dst = outdir / (hashlib.sha256(target['id'].encode()).hexdigest()[:16]+'_article.png')
                                 await page.screenshot(path=str(dst), clip=clip, timeout=6000)
-                                region.update(found=True, file=dst.name, sha256=digest(dst))
+                                region.update(found=True, file=dst.name, sha256=digest(dst),
+                                              kind=('youtube_metadata' if playback_blocked else
+                                                    'youtube_frame' if youtube else 'article'))
                             except Exception as exc:
                                 region['error'] = type(exc).__name__ + ': ' + str(exc)[:120]
                             entry['crops'].append(region)
@@ -169,7 +212,7 @@ async def capture_targets(targets, outdir, playwright_factory=None, *, executabl
                     for entry in entries:
                         entry['error'] = type(exc).__name__ + ': ' + str(exc)[:160]
                 finally:
-                    await page.close()
+                    await context.close()
                     manifest.extend(entries)
         try:
             await asyncio.gather(*(grab(url, rows) for url, rows in grouped.items()))
