@@ -2,7 +2,7 @@
 
 更新: 2026-10-28 JST  
 対象: [PR #6](https://github.com/nyu1791-collab/voiceBox-Pipeline/pull/6) / `feat/gemini-research-dialogue-20261027`  
-PR は `main`（`df6b569`）に対して 17 commit 先行、未マージ。
+PR は `main`（`df6b569`）に未マージ。最新コミットは GitHub で確認する。
 
 ## 現在の入口
 
@@ -11,7 +11,8 @@ PR は `main`（`df6b569`）に対して 17 commit 先行、未マージ。
 - Gemini は Google Search / URL Context で資料を集め、撮影済み画面・関連画像・公開 YouTube URLを渡して、ずんだもんと四国めたんの会話を作る。
 - OpenCode は `.opencode/skills/voicebox-research/SKILL.md` を通じて同じ Gemini 準備コマンドを使う。GitHub Actions から OpenCode は起動しない。
 - Actions の選択肢から旧 `provider=opencode` を外した。旧 DeepSeek 専用コードは残っているが、新規の調査・会話作成の入口ではない。
-- 一時的な Gemini 通信・応答失敗だけは、同じ要求を合計3回まで試す。再調査や再生成は目的があるときだけ行う。
+- Gemini の通信・HTTP 429・5xx・読み取れない応答は合計3回まで試す。401・403などは再送しない。再調査や再生成は目的があるときだけ行う。
+- 画像を1枚も取得できない場合は無地の背景を使用し、画像取得失敗を記録する。尺の目安を変えて台本を再生成するときは調査を再利用できる。
 - 準備成果物は `source-pack-<run_id>`。動画化は別の `voicevox-cpu-video.yml` で、CPU VOICEVOX 10ワーカーを使う。GPUは使わない。
 
 ## できていること

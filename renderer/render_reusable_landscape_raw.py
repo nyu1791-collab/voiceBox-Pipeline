@@ -664,6 +664,15 @@ def render(args):
     caption_font=ImageFont.truetype(str(args.font),layout["caption_font_size"])
     label_font=ImageFont.truetype(str(args.font),int(layout.get("source_label_font_size",12)))
     _src_label={v["id"]:v.get("source_label") for v in (presentation.get("visuals") or [])}
+    label_width=int(layout.get("source_label_max_px",700))
+    for visual_id, label in _src_label.items():
+        if not label or label_font.getlength(label) <= label_width:
+            continue
+        shortened=label
+        while shortened and label_font.getlength(shortened + "…") > label_width:
+            shortened=shortened[:-1]
+        if shortened != label:
+            _src_label[visual_id]=shortened + "…"
     small=ImageFont.truetype(str(args.font),layout["source_font_size"])
     _band_font=ImageFont.truetype(str(args.font),int(layout.get("band_font_size",20)))  # v11：見出しの帯と訳の帯
     _cards_l=[(c["start"]-args.start,c["end"]-args.start) for c in (presentation.get("chapter_cards") or [])]
@@ -864,7 +873,6 @@ def render(args):
             if layout.get("source_label_enabled"):
                 _sl=_src_label.get(current_visual)
                 if not _sl: raise ValueError("source label missing for visual %s" % current_visual)
-                if label_font.getlength(_sl)>int(layout.get("source_label_max_px",700)): raise ValueError("source label too long for one line: %s" % _sl[:30])
                 d.text((int(layout.get("source_label_right_x",1256)),int(layout.get("source_label_y",706))),_sl,font=label_font,fill=layout.get("source_label_color","#F2F6FA"),anchor="rm")  # 出典（RULES §3）
             if i==0:
                 for evidence in character_frame_evidence.values():

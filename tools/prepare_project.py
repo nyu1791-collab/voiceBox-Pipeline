@@ -15,23 +15,30 @@ from renderer.material_capture import capture_targets
 from image_search import collect_related_images
 
 
-def prepare(request, output, script=None, *, allow_api=False, executable_path=None):
+def prepare(request, output, script=None, *, allow_api=False, executable_path=None,
+            regenerate_dialogue=False):
     output = Path(output).resolve()
     output.mkdir(parents=True, exist_ok=True)
     gemini = script is None and request.get('provider') == 'gemini'
     saved_request = output / 'request.json'
     if any(output.iterdir()):
-        if not gemini or not saved_request.is_file() or json.loads(saved_request.read_text()) != request:
+        previous_request = json.loads(saved_request.read_text()) if saved_request.is_file() else {}
+        compatible = {k: v for k, v in previous_request.items() if k != 'minutes'} == {
+            k: v for k, v in request.items() if k != 'minutes'}
+        if not gemini or not compatible:
             raise FileExistsError('Use a new output folder for different inputs')
         receipt = output / 'preparation.json'
-        if receipt.is_file() and (output / 'project.json').is_file():
+        if not regenerate_dialogue and receipt.is_file() and (output / 'project.json').is_file():
             previous = json.loads(receipt.read_text())
             if previous.get('status') == 'PROJECT_READY':
                 return {**previous, 'reused': True, 'research_and_dialogue_calls': 0}
     started = time.monotonic()
     if gemini:
+        if not saved_request.is_file():
+            atomic_json(saved_request, request)
+        result = prepare_gemini(request, output, started, executable_path=executable_path)
         atomic_json(saved_request, request)
-        return prepare_gemini(request, output, started, executable_path=executable_path)
+        return result
     pack = research(request)
     atomic_json(output / 'research.json', pack)
     prompt = script_prompt(pack, request.get('minutes', 10))
@@ -136,8 +143,11 @@ def prepare_gemini(request, output, started, *, executable_path=None):
         async def screenshots():
             if manifest.is_file():
                 return json.loads(manifest.read_text())
-            return await capture_targets(targets, output / 'materials', executable_path=executable_path,
-                                         max_workers=4, retry_delays=())
+            try:
+                return await capture_targets(targets, output / 'materials', executable_path=executable_path,
+                                             max_workers=4, retry_delays=())
+            except Exception as error:
+                return [{'id': target['id'], 'error': type(error).__name__} for target in targets]
 
         async def images():
             if images_manifest.is_file():
@@ -154,7 +164,7 @@ def prepare_gemini(request, output, started, *, executable_path=None):
     by_id = {capture['id']: capture for capture in captures}
     available, visuals, failures, assignments = [], [], [], {}
     for source in pack['sources']:
-        capture = by_id[source['id']]
+        capture = by_id.get(source['id'], {'error': 'capture unavailable'})
         found = [crop for crop in capture.get('crops', []) if crop.get('found')]
         preferred = next((crop for crop in found if crop['name'] != 'article'), None)
         preferred = preferred or next(iter(found), None)
@@ -182,9 +192,14 @@ def prepare_gemini(request, output, started, *, executable_path=None):
             for line_id in specification.get('line_ids', []):
                 assignments[line_id] = (source['id'], visual_id)
     if not available and not related:
-        atomic_json(output / 'preparation.json', {'status': 'FAILED', 'capture_failures': failures,
-                                                  'image_errors': image_results['errors']})
-        raise RuntimeError('No source image was available; see materials/manifest.json')
+        # A neutral background lets the conversation continue without pretending
+        # that a failed capture is a source image.
+        from PIL import Image
+        fallback = output / 'materials' / 'neutral-background.png'
+        fallback.parent.mkdir(parents=True, exist_ok=True)
+        Image.new('RGB', (1280, 720), (35, 56, 48)).save(fallback)
+        visuals.append({'id': 'neutral-background', 'file': 'materials/neutral-background.png',
+                        'source_credit': '背景', 'capture_kind': 'neutral_background'})
 
     captured = {source['id']: source for source in available}
     script_sources = [captured.get(source['id'], source) for source in pack['sources']]
@@ -194,7 +209,7 @@ def prepare_gemini(request, output, started, *, executable_path=None):
     project = normalize_script(script, {**pack, 'sources': script_sources}, flexible=True)
     image_ids = {image['id'] for image in related}
     visual_ids = {visual['id'] for visual in visuals} | image_ids
-    default_visual = available[0]['id'] if available else related[0]['id']
+    default_visual = available[0]['id'] if available else (related[0]['id'] if related else 'neutral-background')
     for line in project['lines']:
         if line.get('source_id') not in captured:
             line['visual'] = default_visual
@@ -212,7 +227,8 @@ def prepare_gemini(request, output, started, *, executable_path=None):
     project.setdefault('audio', {'normalize': True})
     atomic_json(output / 'project.json', project)
     result = {'status': 'PROJECT_READY', 'sources': len(pack['sources']),
-              'screenshots': len({v['file'] for v in visuals}), 'capture_failures': failures,
+              'screenshots': len({v['file'] for v in visuals if v.get('capture_kind') != 'neutral_background'}),
+              'capture_failures': failures,
               'related_images': len(related), 'image_errors': image_results['errors'],
               'youtube_playback_blocked': sum(bool(c.get('playback_blocked')) for c in captures),
               'lines': len(project['lines']), 'provider': 'gemini', 'model': model,

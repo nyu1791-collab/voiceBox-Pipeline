@@ -8,6 +8,7 @@ import os
 import time
 from urllib.parse import parse_qs, quote, urlsplit
 from urllib.request import Request, urlopen
+from urllib.error import HTTPError, URLError
 
 from research import public_url, source_id
 
@@ -48,7 +49,13 @@ def call_gemini(model, parts, *, system, tools=(), schema=None):
             if not text:
                 raise ValueError('Gemini returned no usable response')
             return json.loads(text), candidate
-        except (OSError, ValueError, KeyError, TypeError):
+        except HTTPError as error:
+            if error.code != 429 and not 500 <= error.code <= 599:
+                raise RuntimeError(f'Gemini API failed (HTTP {error.code})') from None
+            if attempt == 2:
+                raise RuntimeError(f'Gemini API failed (HTTP {error.code}, 3 attempts)') from None
+            time.sleep(attempt + 1)
+        except (URLError, TimeoutError, OSError, ValueError, KeyError, TypeError):
             if attempt == 2:
                 raise RuntimeError('Gemini API failed after 3 attempts') from None
             time.sleep(attempt + 1)

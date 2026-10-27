@@ -93,7 +93,6 @@ jobs:
           MODEL: ${{ inputs.model }}
           MINUTES: ${{ inputs.minutes }}
           GEMINI_API_KEY: ${{ inputs.provider == 'gemini' && secrets.GEMINI_API_KEY || '' }}
-          GROQ_API_KEY: ${{ inputs.provider == 'groq' && secrets.GROQ_API_KEY || '' }}
           YOUTUBE_STORAGE_STATE: ${{ secrets.YOUTUBE_STORAGE_STATE }}
           REGENERATE_DIALOGUE: ${{ inputs.regenerate_dialogue }}
         run: |
@@ -105,11 +104,9 @@ jobs:
                      'model': os.environ['MODEL'], 'minutes': float(os.environ['MINUTES']),
                      'urls': os.environ.get('SOURCE_URLS', '').splitlines()}
           output = Path(os.environ['RUNNER_TEMP'])/'source-pack'
-          if os.environ.get('REGENERATE_DIALOGUE') == 'true':
-              for name in ('project.json', 'preparation.json'):
-                  (output/name).unlink(missing_ok=True)
           result = prepare(request, output,
-                           allow_api=request['provider'] != 'none')
+                           allow_api=request['provider'] != 'none',
+                           regenerate_dialogue=os.environ.get('REGENERATE_DIALOGUE') == 'true')
           print(json.dumps(result, ensure_ascii=False))
           PY
       - name: Capture YouTube

@@ -6,6 +6,7 @@ from pathlib import Path
 import tempfile
 import unittest
 from unittest.mock import patch
+from urllib.error import HTTPError
 
 from PIL import Image
 
@@ -14,6 +15,57 @@ from tools.prepare_project import prepare
 
 
 class GeminiFlowTest(unittest.TestCase):
+    def test_auth_failure_is_not_retried(self):
+        from gemini_workflow import call_gemini
+        error = HTTPError('https://example.test', 401, 'unauthorized', {}, None)
+        with patch.dict(os.environ, {'GEMINI_API_KEY': 'fixture'}), \
+             patch('gemini_workflow.urlopen', side_effect=error) as send:
+            with self.assertRaisesRegex(RuntimeError, 'HTTP 401'):
+                call_gemini('example', [], system='test')
+        self.assertEqual(send.call_count, 1)
+
+    def test_temporary_http_error_retries_and_succeeds(self):
+        from gemini_workflow import call_gemini
+        error = HTTPError('https://example.test', 429, 'busy', {}, None)
+        response = {'candidates': [{'content': {'parts': [{'text': '{"ok": true}'}]}}]}
+        with patch.dict(os.environ, {'GEMINI_API_KEY': 'fixture'}), \
+             patch('gemini_workflow.urlopen', side_effect=[error, io.BytesIO(json.dumps(response).encode())]) as send, \
+             patch('gemini_workflow.time.sleep'):
+            result, _ = call_gemini('example', [], system='test')
+        self.assertTrue(result['ok'])
+        self.assertEqual(send.call_count, 2)
+
+    def test_missing_images_and_changed_duration_can_continue(self):
+        url = 'https://example.com/article'
+        source = {'id': source_id(url), 'url': url, 'title': '記事', 'text': '要約',
+                  'extraction_status': 'GEMINI_SUMMARY', 'is_youtube': False}
+        pack = {'topic': '調査', 'sources': [source]}
+        script = {'title': '会話', 'lines': [
+            {'speaker': 'ずんだもん', 'text': '説明なのだ。', 'source_id': source['id']}]}
+
+        async def failed_capture(*args, **kwargs):
+            raise OSError('browser unavailable')
+
+        def no_images(*args, **kwargs):
+            return {'images': [], 'errors': [{'error': 'unavailable'}]}
+
+        with tempfile.TemporaryDirectory() as directory, \
+             patch('gemini_workflow.research_with_gemini', return_value=pack) as research, \
+             patch('gemini_workflow.create_dialogue', return_value=(script, {})) as dialogue, \
+             patch('tools.prepare_project.capture_targets', side_effect=failed_capture), \
+             patch('tools.prepare_project.collect_related_images', side_effect=no_images):
+            output = Path(directory) / 'out'
+            request = {'topic': '調査', 'provider': 'gemini', 'urls': [url], 'minutes': 5}
+            result = prepare(request, output)
+            project = json.loads((output / 'project.json').read_text())
+            self.assertEqual(result['screenshots'], 0)
+            self.assertEqual(project['lines'][0]['visual'], 'neutral-background')
+            self.assertTrue(project['lines'][0]['visual_context_only'])
+            self.assertTrue((output / 'materials/neutral-background.png').is_file())
+            prepare({**request, 'minutes': 10}, output, regenerate_dialogue=True)
+            self.assertEqual(research.call_count, 1)
+            self.assertEqual(dialogue.call_count, 2)
+
     def test_research_capture_then_dialogue_with_partial_capture(self):
         video = 'https://www.youtube.com/watch?v=example'
         article = 'https://example.com/article'
