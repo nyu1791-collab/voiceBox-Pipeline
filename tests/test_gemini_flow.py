@@ -84,6 +84,10 @@ class GeminiFlowTest(unittest.TestCase):
         self.assertEqual(requests[0]['generationConfig']['thinkingConfig']['thinkingLevel'], 'MEDIUM')
         self.assertIn({'googleSearch': {}}, requests[0]['tools'])
         self.assertIn({'urlContext': {}}, requests[1]['tools'])
+        schema = requests[1]['generationConfig']['responseFormat']['text']['schema']
+        lines = schema['properties']['lines']['items']
+        self.assertIn('visual_id', lines['required'])
+        self.assertIn('img-reference', lines['properties']['visual_id']['enum'])
         self.assertTrue(any(part.get('fileData', {}).get('fileUri') == video
                             for part in requests[1]['contents'][0]['parts']))
         self.assertEqual(sum('inlineData' in part for part in requests[1]['contents'][0]['parts']), 3)

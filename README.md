@@ -91,6 +91,8 @@ Geminiの要約は記事全文ではありません。撮れなかった資料�
 
 画像だけを取得する場合は「Research and JSON Project」の `image_query` に検索語を指定します。この実行ではGeminiを呼びません。
 
+以前の実行IDを `resume_run_id` に指定すると、同じ入力で調査と画像を再利用できます。`regenerate_dialogue` を有効にした場合だけ、保存済みの資料を使って台本を作り直します。
+
 YouTube側で再生にログイン確認が必要な場合、動画フレームの代わりに公開ページのタイトルや説明を撮影し、`capture_kind` に記録します。動画の内容はGeminiに公開URLを渡して読み取ります。
 
 YouTubeの撮影だけを行う場合は「Research and JSON Project」の `capture_url` に動画URLを指定します。再生できたときは実際の動画フレームを保存し、確認画面や広告で再生できないときは資料画面を保存して区別します。この実行ではGeminiを呼びません。

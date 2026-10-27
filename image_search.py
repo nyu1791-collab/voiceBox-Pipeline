@@ -3,10 +3,21 @@ from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime, timezone
 from io import BytesIO
 from pathlib import Path
-from urllib.parse import urlsplit
+from urllib.parse import quote, urlsplit, urlunsplit
 import hashlib
 
 from research import fetch, public_url
+
+
+def request_url(url):
+    parts = urlsplit(public_url(url))
+    hostname = parts.hostname.encode('idna').decode('ascii')
+    if ':' in hostname:
+        hostname = '[' + hostname + ']'
+    netloc = hostname + (':' + str(parts.port) if parts.port else '')
+    return urlunsplit((parts.scheme, netloc,
+                       quote(parts.path, safe="/%:@!$&'()*+,;=-._~"),
+                       quote(parts.query, safe="=&%:+/?@!$'()*,-._~"), ''))
 
 
 def collect_related_images(query, outdir, *, limit=8, search=None, fetcher=fetch):
@@ -26,7 +37,7 @@ def collect_related_images(query, outdir, *, limit=8, search=None, fetcher=fetch
         try:
             source = public_url(row.get('url', ''))
             image_url = public_url(row.get('image', ''))
-            raw, _ = fetcher(image_url, maximum=8 * 1024**2)
+            raw, _ = fetcher(request_url(image_url), maximum=8 * 1024**2)
             from PIL import Image, ImageOps
             with Image.open(BytesIO(raw)) as picture:
                 picture = ImageOps.exif_transpose(picture)

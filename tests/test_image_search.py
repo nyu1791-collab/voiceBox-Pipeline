@@ -4,7 +4,7 @@ import tempfile
 
 from PIL import Image
 
-from image_search import collect_related_images
+from image_search import collect_related_images, request_url
 
 
 def test_image_search_saves_image_and_source_page():
@@ -28,3 +28,8 @@ def test_image_search_saves_image_and_source_page():
         assert item['source_image_url'] == image_url
         assert item['source_credit'] == '写真の出典'
         assert (Path(directory) / item['file']).is_file()
+
+
+def test_non_ascii_image_url_is_encoded_for_the_http_request():
+    assert request_url('https://example.com/画像.png?名=猫') == (
+        'https://example.com/%E7%94%BB%E5%83%8F.png?%E5%90%8D=%E7%8C%AB')

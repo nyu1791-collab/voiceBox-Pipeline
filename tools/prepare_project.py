@@ -193,17 +193,21 @@ def prepare_gemini(request, output, started, *, executable_path=None):
     script, details = create_dialogue(prompt, script_sources, output, model, related_images=related)
     project = normalize_script(script, {**pack, 'sources': script_sources}, flexible=True)
     image_ids = {image['id'] for image in related}
+    visual_ids = {visual['id'] for visual in visuals} | image_ids
     default_visual = available[0]['id'] if available else related[0]['id']
     for line in project['lines']:
         if line.get('source_id') not in captured:
             line['visual'] = default_visual
             line['visual_context_only'] = True
-        if line.get('visual_id') in image_ids:
+        if line.get('visual_id') in visual_ids:
             line['visual'] = line['visual_id']
-            line['visual_context_only'] = True
+            line['visual_context_only'] = line['visual_id'] != line.get('source_id')
         assignment = assignments.get(line['id'])
         if assignment and line.get('source_id') == assignment[0]:
             line['visual'] = assignment[1]
+    if related and not any(line['visual'] in image_ids for line in project['lines']):
+        project['lines'][0]['visual'] = related[0]['id']
+        project['lines'][0]['visual_context_only'] = True
     project['visuals'] = visuals + related
     project.setdefault('audio', {'normalize': True})
     atomic_json(output / 'project.json', project)

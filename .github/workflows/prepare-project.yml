@@ -16,6 +16,13 @@ on:
       image_query:
         description: '指定した場合は関連画像の取得だけを実行'
         type: string
+      resume_run_id:
+        description: '以前の調査・画像を再利用する実行ID（任意）'
+        type: string
+      regenerate_dialogue:
+        description: '保存した資料から台本だけを作り直す'
+        type: boolean
+        default: false
       provider:
         description: '既定はGeminiで調査・撮影・台本作成。noneは情報収集のみ'
         type: choice
@@ -31,6 +38,7 @@ on:
 
 permissions:
   contents: read
+  actions: read
 
 jobs:
   prepare:
@@ -38,6 +46,14 @@ jobs:
     timeout-minutes: 15
     steps:
       - uses: actions/checkout@v4
+      - name: Reuse a saved source pack
+        if: inputs.resume_run_id != '' && inputs.capture_url == '' && inputs.image_query == ''
+        uses: actions/download-artifact@v4
+        with:
+          name: source-pack-${{ inputs.resume_run_id }}
+          path: ${{ runner.temp }}/source-pack
+          run-id: ${{ inputs.resume_run_id }}
+          github-token: ${{ github.token }}
       - uses: actions/setup-python@v5
         with:
           python-version: '3.11'
@@ -81,6 +97,7 @@ jobs:
           GROQ_API_KEY: ${{ inputs.provider == 'groq' && secrets.GROQ_API_KEY || '' }}
           OPENCODE_API_KEY: ${{ inputs.provider == 'opencode' && secrets.OPENCODE_API_KEY || '' }}
           YOUTUBE_STORAGE_STATE: ${{ secrets.YOUTUBE_STORAGE_STATE }}
+          REGENERATE_DIALOGUE: ${{ inputs.regenerate_dialogue }}
         run: |
           python - <<'PY'
           import json, os
@@ -89,7 +106,11 @@ jobs:
           request = {'topic': os.environ['TOPIC'], 'provider': os.environ['PROVIDER'],
                      'model': os.environ['MODEL'], 'minutes': float(os.environ['MINUTES']),
                      'urls': os.environ.get('SOURCE_URLS', '').splitlines()}
-          result = prepare(request, Path(os.environ['RUNNER_TEMP'])/'source-pack',
+          output = Path(os.environ['RUNNER_TEMP'])/'source-pack'
+          if os.environ.get('REGENERATE_DIALOGUE') == 'true':
+              for name in ('project.json', 'preparation.json'):
+                  (output/name).unlink(missing_ok=True)
+          result = prepare(request, output,
                            allow_api=request['provider'] != 'none')
           print(json.dumps(result, ensure_ascii=False))
           PY

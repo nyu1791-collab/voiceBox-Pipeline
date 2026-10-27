@@ -1,5 +1,6 @@
 """Gemini research and dialogue, with actual page captures and YouTube inputs."""
 import base64
+import copy
 from datetime import datetime, timezone
 from io import BytesIO
 import json
@@ -125,12 +126,20 @@ def create_dialogue(prompt, sources, output, model=DEFAULT_MODEL, related_images
             parts.append({'fileData': {'fileUri': source['url']}})
             videos += 1
     if related_images:
-        parts.append({'text': '以下は検索で見つかった関連画像です。台詞に合う場合はvisual_idに画像IDを指定し、'
-                      'source_idは情報の根拠となる資料IDを指定してください。画像の出典は別に記録します。'})
+        parts.append({'text': '以下は検索で見つかった関連画像です。各台詞のvisual_idには、'
+                      '会話に合う画像IDまたは撮影済み画面の資料IDを指定してください。'
+                      '関連画像も積極的に使ってください。source_idは情報の根拠となる資料IDであり、'
+                      '画像の出典は別に記録します。'})
     for item in related_images:
         parts.append({'text': '画像ID: ' + item['id'] + '\n出典ページ: ' + item['source_url'] +
                               '\n画像の説明: ' + item['source_credit']})
         parts.append(image_part(output / item['file']))
     tools = [{'urlContext': {}}] if any(not source.get('is_youtube') for source in sources) else []
-    script, candidate = call_gemini(model, parts, system=prompt['system'], tools=tools, schema=SCRIPT_SCHEMA)
+    schema = copy.deepcopy(SCRIPT_SCHEMA)
+    if related_images:
+        ids = [item['id'] for item in related_images] + [source['id'] for source in sources if source.get('screenshot')]
+        line_schema = schema['properties']['lines']['items']
+        line_schema['properties']['visual_id']['enum'] = ids
+        line_schema['required'].append('visual_id')
+    script, candidate = call_gemini(model, parts, system=prompt['system'], tools=tools, schema=schema)
     return script, {'youtube_inputs': videos, 'url_context': candidate.get('urlContextMetadata', {})}
