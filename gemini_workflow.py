@@ -5,6 +5,7 @@ from datetime import datetime, timezone
 from io import BytesIO
 import json
 import os
+import time
 from urllib.parse import parse_qs, quote, urlsplit
 from urllib.request import Request, urlopen
 
@@ -37,18 +38,20 @@ def call_gemini(model, parts, *, system, tools=(), schema=None):
                       quote(model, safe='') + ':generateContent',
                       data=json.dumps(payload, ensure_ascii=False).encode(),
                       headers={'x-goog-api-key': key, 'Content-Type': 'application/json'})
-    try:
-        with urlopen(request, timeout=240) as response:
-            result = json.load(response)
-    except Exception as error:
-        status = getattr(error, 'code', None)
-        raise RuntimeError('Gemini API failed' + (f' (HTTP {status})' if status else '')) from None
-    candidate = (result.get('candidates') or [{}])[0]
-    text = ''.join(part.get('text', '') for part in candidate.get('content', {}).get('parts', [])
-                   if not part.get('thought'))
-    if not text:
-        raise RuntimeError('Gemini returned no usable response')
-    return json.loads(text), candidate
+    for attempt in range(3):
+        try:
+            with urlopen(request, timeout=240) as response:
+                result = json.load(response)
+            candidate = (result.get('candidates') or [{}])[0]
+            text = ''.join(part.get('text', '') for part in candidate.get('content', {}).get('parts', [])
+                           if not part.get('thought'))
+            if not text:
+                raise ValueError('Gemini returned no usable response')
+            return json.loads(text), candidate
+        except (OSError, ValueError, KeyError, TypeError):
+            if attempt == 2:
+                raise RuntimeError('Gemini API failed after 3 attempts') from None
+            time.sleep(attempt + 1)
 
 
 SOURCE_SCHEMA = {
