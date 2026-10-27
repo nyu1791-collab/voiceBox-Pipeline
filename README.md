@@ -89,6 +89,14 @@ GitHub Actionsから追跡対象ファイルのスナップショットをGoogle
 
 YouTube側で再生にログイン確認が必要な場合、動画フレームの代わりに公開ページのタイトルや説明を撮影し、`capture_kind` に記録します。動画の内容はGeminiに公開URLを渡して読み取ります。
 
+YouTube画面の撮影に自分のアカウントを使う場合は、専用のブラウザで正規ログインし、その状態をGitHub Secretに登録します。認証状態はYouTubeの撮影だけに使用し、成果物には保存しません。Google側が追加確認を求める場合は、Actions側から許可を強制できません。
+
+```bash
+python -m playwright codegen --save-storage youtube-auth.json https://www.youtube.com/
+gh secret set YOUTUBE_STORAGE_STATE --repo nyu1791-collab/voiceBox-Pipeline < youtube-auth.json
+rm youtube-auth.json
+```
+
 ローカルでは次の入口を使います。`request.json` と成果物は利用者の作業フォルダに置きます。
 
 ```bash

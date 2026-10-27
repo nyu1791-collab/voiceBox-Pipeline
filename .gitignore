@@ -10,6 +10,7 @@ __pycache__/
 *.zip
 *.key
 .env
+youtube-auth.json
 .pytest_cache/
 examples/project.json
 *.7z*

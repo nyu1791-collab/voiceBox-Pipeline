@@ -4,6 +4,7 @@ import asyncio
 import datetime
 import hashlib
 import json
+import os
 import time
 from pathlib import Path
 from urllib.parse import urlsplit
@@ -112,8 +113,12 @@ async def capture_targets(targets, outdir, playwright_factory=None, *, executabl
 
         async def grab(url, rows):
             async with semaphore:
-                page = await browser.new_page(viewport={'width': 1280, 'height': 900},
-                                              device_scale_factor=1)
+                youtube = (urlsplit(url).hostname or '').lower() in ('youtube.com', 'www.youtube.com', 'm.youtube.com', 'youtu.be')
+                state = os.environ.get('YOUTUBE_STORAGE_STATE') if youtube else None
+                context = await browser.new_context(viewport={'width': 1280, 'height': 900},
+                                                    device_scale_factor=1,
+                                                    storage_state=json.loads(state) if state else None)
+                page = await context.new_page()
                 retries = []
                 entries = [{'id': t['id'], 'url': url, 'captured_utc': None, 'files': [],
                             'crops': [], 'retries': retries} for t in rows]
@@ -124,7 +129,6 @@ async def capture_targets(targets, outdir, playwright_factory=None, *, executabl
                         raise ValueError('HTTP ' + str(response.status if response else 'no response'))
                     if (urlsplit(page.url).hostname or '').startswith('consent.'):
                         raise ValueError('Consent page instead of source')
-                    youtube = (urlsplit(url).hostname or '').endswith(('youtube.com', 'youtu.be'))
                     playback_blocked = False
                     if youtube:
                         await page.wait_for_timeout(1200)
@@ -188,7 +192,7 @@ async def capture_targets(targets, outdir, playwright_factory=None, *, executabl
                     for entry in entries:
                         entry['error'] = type(exc).__name__ + ': ' + str(exc)[:160]
                 finally:
-                    await page.close()
+                    await context.close()
                     manifest.extend(entries)
         try:
             await asyncio.gather(*(grab(url, rows) for url, rows in grouped.items()))

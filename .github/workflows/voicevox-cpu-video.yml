@@ -77,6 +77,7 @@ jobs:
           GEMINI_API_KEY: ${{ inputs.script_provider != 'opencode' && secrets.GEMINI_API_KEY || '' }}
           GROQ_API_KEY: ${{ inputs.script_provider != 'opencode' && secrets.GROQ_API_KEY || '' }}
           OPENCODE_API_KEY: ${{ inputs.mode == 'production' && inputs.allow_script_api && inputs.script_provider == 'opencode' && secrets.OPENCODE_API_KEY || '' }}
+          YOUTUBE_STORAGE_STATE: ${{ secrets.YOUTUBE_STORAGE_STATE }}
         run: python tools/actions_run.py --mode "$RUN_MODE" --engine-dir "$VOICEVOX_DIR" --output "$RUNNER_TEMP/voicebox-output"
       - name: Store collected sources, screenshots and dialogue
         if: always() && inputs.mode == 'production'

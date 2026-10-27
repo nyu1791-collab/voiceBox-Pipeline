@@ -65,6 +65,7 @@ jobs:
           GEMINI_API_KEY: ${{ inputs.provider == 'gemini' && secrets.GEMINI_API_KEY || '' }}
           GROQ_API_KEY: ${{ inputs.provider == 'groq' && secrets.GROQ_API_KEY || '' }}
           OPENCODE_API_KEY: ${{ inputs.provider == 'opencode' && secrets.OPENCODE_API_KEY || '' }}
+          YOUTUBE_STORAGE_STATE: ${{ secrets.YOUTUBE_STORAGE_STATE }}
         run: |
           python - <<'PY'
           import json, os
