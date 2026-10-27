@@ -16,6 +16,9 @@
 
 ## できていること
 
+- マージ後の資料再利用＋会話生成 [40581843190](https://github.com/nyu1791-collab/voiceBox-Pipeline/actions/runs/40581843190): Gemini 3.8 Flash / MEDIUM、保存済み調査を再利用し会話14行を生成。画像7件・撮影4件。Gemini呼び出しは会話生成1回、準備処理45.981秒。成果物は2026-11-03 20:53 UTCまで。撮影4件の403、画像1件の旧取得エラー、YouTube再生制限は再利用した旧資料の記録であり、今回再取得していない。動画は未生成。
+- 直前の [40581700633](https://github.com/nyu1791-collab/voiceBox-Pipeline/actions/runs/40581700633) は既定モデルの空欄と明示名の差で資料再利用前に失敗。コミット `8c43f204` で同一と扱うよう修正後に上記実行が成功。失敗回ではGemini呼び出しなし。
+
 - 画像取得実行 [40575667666](https://github.com/nyu1791-collab/voiceBox-Pipeline/actions/runs/40575667666): 関連画像8件、出典ページを保存。
 - 資料再利用＋会話生成 [40576734744](https://github.com/nyu1791-collab/voiceBox-Pipeline/actions/runs/40576734744): 会話16行、関連画像7件中3件を台詞に採用。
 - YouTube撮影 [40566359864](https://github.com/nyu1791-collab/voiceBox-Pipeline/actions/runs/40566359864): ボット確認のため実フレームではなく `youtube_metadata` 画面を保存。
