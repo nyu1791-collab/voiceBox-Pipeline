@@ -295,7 +295,8 @@ def render(project, runtime, out, records):
     final_temp = out / ("final-" + uuid.uuid4().hex + ".mp4")
     effects = sound_effects(project, records)
     mux_audio(temporary, out / "narration.wav", final_temp, {**project.get('audio', {}), 'effects': effects})
-    make_thumbnail(final_temp, out / 'thumbnail.png', project.get('thumbnail_title', project['title']), runtime['font'])
+    thumbnail_title = str(project.get('thumbnail_title') or project['title'])[:120]
+    make_thumbnail(final_temp, out / 'thumbnail.png', thumbnail_title, runtime['font'])
     if (out / "video.mp4").exists():
         raise FileExistsError("Will not replace an existing video.mp4")
     final_temp.replace(out / "video.mp4")

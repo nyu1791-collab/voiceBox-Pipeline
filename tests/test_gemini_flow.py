@@ -62,6 +62,9 @@ class GeminiFlowTest(unittest.TestCase):
             self.assertEqual(project['lines'][0]['visual'], 'neutral-background')
             self.assertTrue(project['lines'][0]['visual_context_only'])
             self.assertTrue((output / 'materials/neutral-background.png').is_file())
+            from pipeline import load_project
+            loaded = load_project(output / 'project.json')
+            self.assertEqual(loaded['lines'][0]['visual'], 'neutral-background')
             prepare({**request, 'minutes': 10}, output, regenerate_dialogue=True)
             self.assertEqual(research.call_count, 1)
             self.assertEqual(dialogue.call_count, 2)
