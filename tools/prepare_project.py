@@ -23,8 +23,13 @@ def prepare(request, output, script=None, *, allow_api=False, executable_path=No
     saved_request = output / 'request.json'
     if any(output.iterdir()):
         previous_request = json.loads(saved_request.read_text()) if saved_request.is_file() else {}
-        compatible = {k: v for k, v in previous_request.items() if k != 'minutes'} == {
-            k: v for k, v in request.items() if k != 'minutes'}
+        def research_inputs(value):
+            result = {k: v for k, v in value.items() if k != 'minutes'}
+            if result.get('provider') == 'gemini':
+                from gemini_workflow import DEFAULT_MODEL
+                result['model'] = result.get('model') or DEFAULT_MODEL
+            return result
+        compatible = research_inputs(previous_request) == research_inputs(request)
         if not gemini or not compatible:
             raise FileExistsError('Use a new output folder for different inputs')
         receipt = output / 'preparation.json'

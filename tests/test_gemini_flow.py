@@ -55,7 +55,7 @@ class GeminiFlowTest(unittest.TestCase):
              patch('tools.prepare_project.capture_targets', side_effect=failed_capture), \
              patch('tools.prepare_project.collect_related_images', side_effect=no_images):
             output = Path(directory) / 'out'
-            request = {'topic': '調査', 'provider': 'gemini', 'urls': [url], 'minutes': 5}
+            request = {'topic': '調査', 'provider': 'gemini', 'model': 'gemini-3.8-flash', 'urls': [url], 'minutes': 5}
             result = prepare(request, output)
             project = json.loads((output / 'project.json').read_text())
             self.assertEqual(result['screenshots'], 0)
@@ -65,7 +65,7 @@ class GeminiFlowTest(unittest.TestCase):
             from pipeline import load_project
             loaded = load_project(output / 'project.json')
             self.assertEqual(loaded['lines'][0]['visual'], 'neutral-background')
-            prepare({**request, 'minutes': 10}, output, regenerate_dialogue=True)
+            prepare({**request, 'minutes': 10, 'model': ''}, output, regenerate_dialogue=True)
             self.assertEqual(research.call_count, 1)
             self.assertEqual(dialogue.call_count, 2)
 
