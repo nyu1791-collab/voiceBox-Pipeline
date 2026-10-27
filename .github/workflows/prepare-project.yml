@@ -10,6 +10,9 @@ on:
       source_urls:
         description: '公開記事やYouTube動画のURL（任意・1行1件）'
         type: string
+      capture_url:
+        description: '指定した場合はYouTubeの撮影だけを実行'
+        type: string
       provider:
         description: '既定はGeminiで調査・撮影・台本作成。noneは情報収集のみ'
         type: choice
@@ -56,6 +59,7 @@ jobs:
           fi
           python -m playwright install --with-deps chromium
       - name: Collect and prepare
+        if: inputs.capture_url == ''
         env:
           TOPIC: ${{ inputs.topic }}
           SOURCE_URLS: ${{ inputs.source_urls }}
@@ -76,6 +80,25 @@ jobs:
                      'urls': os.environ.get('SOURCE_URLS', '').splitlines()}
           result = prepare(request, Path(os.environ['RUNNER_TEMP'])/'source-pack',
                            allow_api=request['provider'] != 'none')
+          print(json.dumps(result, ensure_ascii=False))
+          PY
+      - name: Capture YouTube
+        if: inputs.capture_url != ''
+        env:
+          VIDEO_URL: ${{ inputs.capture_url }}
+          YOUTUBE_STORAGE_STATE: ${{ secrets.YOUTUBE_STORAGE_STATE }}
+        run: |
+          python - <<'PY'
+          import asyncio, json, os
+          from pathlib import Path
+          from gemini_workflow import youtube_video
+          from renderer.material_capture import capture_targets
+          url = os.environ['VIDEO_URL']
+          if not youtube_video(url):
+              raise ValueError('公開YouTube動画のURLを指定してください')
+          result = asyncio.run(capture_targets([{'id': 'youtube', 'url': url, 'viewport_only': True,
+              'article_region': True, 'region_selector': '#movie_player'}],
+              Path(os.environ['RUNNER_TEMP'])/'source-pack', retry_delays=()))
           print(json.dumps(result, ensure_ascii=False))
           PY
       - uses: actions/upload-artifact@v4
