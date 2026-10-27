@@ -74,15 +74,21 @@ jobs:
         env:
           IMAGE_QUERY: ${{ inputs.image_query }}
           PROVIDER: ${{ inputs.provider }}
+          RESUME_RUN_ID: ${{ inputs.resume_run_id }}
         run: |
+          NEED_BROWSER=true
           if [ -n "$IMAGE_QUERY" ]; then
             python -m pip install 'Pillow>=10.4,<12' 'ddgs==9.16.0'
+            NEED_BROWSER=false
+          elif [ -n "$RESUME_RUN_ID" ] && [ -s "$RUNNER_TEMP/source-pack/materials/manifest.json" ] && [ -s "$RUNNER_TEMP/source-pack/materials/related/manifest.json" ]; then
+            python -m pip install 'Pillow>=10.4,<12'
+            NEED_BROWSER=false
           elif [ "$PROVIDER" = 'gemini' ]; then
             python -m pip install 'Pillow>=10.4,<12' 'playwright==1.64.0' 'ddgs==9.16.0'
           else
             python -m pip install -r requirements.txt
           fi
-          if [ -z "$IMAGE_QUERY" ]; then
+          if [ "$NEED_BROWSER" = true ]; then
             python -m playwright install --with-deps chromium
           fi
       - name: Collect and prepare
