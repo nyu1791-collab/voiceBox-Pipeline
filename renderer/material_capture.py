@@ -138,6 +138,24 @@ async def capture_targets(targets, outdir, playwright_factory=None, *, executabl
                                                 'ボットではないこと' in player_text)
                         except Exception:
                             pass
+                        if not playback_blocked:
+                            try:
+                                video = page.locator('#movie_player video').first
+                                await video.evaluate('''async v => {
+                                    v.muted = true;
+                                    await Promise.race([v.play().catch(() => {}),
+                                        new Promise(resolve => setTimeout(resolve, 2000))]);
+                                }''', timeout=4000)
+                                await page.wait_for_function('''() => {
+                                    const p = document.querySelector('#movie_player');
+                                    const v = p && p.querySelector('video');
+                                    return v && v.readyState >= 2 && v.videoWidth > 0 &&
+                                           !p.classList.contains('ad-showing');
+                                }''', timeout=8000)
+                                await page.wait_for_timeout(500)
+                                await video.evaluate('v => v.pause()')
+                            except Exception:
+                                playback_blocked = True
                     # Font readiness is bounded; analytics must not hold networkidle open.
                     try:
                         await page.wait_for_function('document.fonts.status === "loaded"', timeout=3000)
@@ -156,6 +174,8 @@ async def capture_targets(targets, outdir, playwright_factory=None, *, executabl
                                 selector = target.get('region_selector')
                                 if playback_blocked and selector == '#movie_player':
                                     selector = 'ytd-watch-metadata, #title h1'
+                                elif youtube and selector == '#movie_player':
+                                    selector = '#movie_player video'
                                 selected = await pick_article(page, selector, target.get('heading'))
                                 await selected.scroll_into_view_if_needed(timeout=4000)
                                 box = await selected.bounding_box()
@@ -168,7 +188,7 @@ async def capture_targets(targets, outdir, playwright_factory=None, *, executabl
                                 await page.screenshot(path=str(dst), clip=clip, timeout=6000)
                                 region.update(found=True, file=dst.name, sha256=digest(dst),
                                               kind=('youtube_metadata' if playback_blocked else
-                                                    'youtube_player' if youtube else 'article'))
+                                                    'youtube_frame' if youtube else 'article'))
                             except Exception as exc:
                                 region['error'] = type(exc).__name__ + ': ' + str(exc)[:120]
                             entry['crops'].append(region)

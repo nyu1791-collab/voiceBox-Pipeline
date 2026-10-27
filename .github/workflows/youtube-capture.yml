@@ -1,0 +1,51 @@
+name: Capture YouTube page
+on:
+  workflow_dispatch:
+    inputs:
+      url:
+        description: '撮影する公開YouTube動画のURL'
+        required: true
+        type: string
+permissions:
+  contents: read
+jobs:
+  capture:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - uses: actions/cache@v4
+        with:
+          path: ~/.cache/ms-playwright
+          key: playwright-chromium-1.64.0-${{ runner.os }}
+      - run: |
+          python -m pip install 'Pillow>=10.4,<12' 'playwright==1.64.0'
+          python -m playwright install --with-deps chromium
+      - name: Capture
+        env:
+          VIDEO_URL: ${{ inputs.url }}
+          YOUTUBE_STORAGE_STATE: ${{ secrets.YOUTUBE_STORAGE_STATE }}
+        run: |
+          python - <<'PY'
+          import asyncio, json, os
+          from pathlib import Path
+          from gemini_workflow import youtube_video
+          from renderer.material_capture import capture_targets
+          url = os.environ['VIDEO_URL']
+          if not youtube_video(url):
+              raise ValueError('公開YouTube動画のURLを指定してください')
+          result = asyncio.run(capture_targets([{'id':'youtube', 'url':url, 'viewport_only':True,
+              'article_region':True, 'region_selector':'#movie_player'}],
+              Path(os.environ['RUNNER_TEMP'])/'youtube-capture', retry_delays=()))
+          print(json.dumps(result, ensure_ascii=False))
+          PY
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: youtube-capture-${{ github.run_id }}
+          path: ${{ runner.temp }}/youtube-capture/
+          if-no-files-found: warn
+          retention-days: 7
