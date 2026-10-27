@@ -24,6 +24,7 @@ class GeminiFlowTest(unittest.TestCase):
         dialogue = {'title': '会話', 'lines': [
             {'speaker': 'ずんだもん', 'text': '動画を見たのだ。', 'source_id': source_id(video)},
             {'speaker': '四国めたん', 'text': '記事も紹介するわ。', 'source_id': source_id(article)},
+            {'speaker': 'ずんだもん', 'text': '画面が撮れない記事も読むのだ。', 'source_id': source_id(missing)},
             {'speaker': '四国めたん', 'text': '次の話よ。', 'source_id': 'unknown'}]}
 
         def call(request, timeout):
@@ -63,6 +64,8 @@ class GeminiFlowTest(unittest.TestCase):
         self.assertEqual(len(result['capture_failures']), 1)
         self.assertTrue(reused['reused'])
         self.assertEqual(len(requests), 2)
+        self.assertEqual(project['lines'][2]['source_id'], source_id(missing))
+        self.assertTrue(project['lines'][2]['visual_context_only'])
         self.assertTrue(project['lines'][-1]['visual_context_only'])
         self.assertEqual(requests[0]['generationConfig']['thinkingConfig']['thinkingLevel'], 'MEDIUM')
         self.assertIn({'googleSearch': {}}, requests[0]['tools'])

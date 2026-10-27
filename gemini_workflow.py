@@ -114,11 +114,12 @@ def image_part(path):
 def create_dialogue(prompt, sources, output, model=DEFAULT_MODEL):
     parts = [{'text': prompt['user'] + '\n各画像は直前に記した資料IDの実際の画面です。'
               '動画は内容を読み取り、ウェブ記事はURLコンテキストも使ってから会話台本を作成してください。'
-              '画面だけでは根拠を確認できない場合は断定しないでください。'}]
+              '画像のない資料も内容を利用できます。根拠を確認できない場合は断定しないでください。'}]
     videos = 0
     for source in sources:
         parts.append({'text': '資料ID: ' + source['id'] + '\nURL: ' + source['url']})
-        parts.append(image_part(output / source['screenshot']))
+        if source.get('screenshot'):
+            parts.append(image_part(output / source['screenshot']))
         if source.get('is_youtube') and videos < 10:
             parts.append({'fileData': {'fileUri': source['url']}})
             videos += 1

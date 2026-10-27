@@ -85,7 +85,7 @@ GitHub Actionsから追跡対象ファイルのスナップショットをGoogle
 
 [Actions → Research and JSON Project](https://github.com/nyu1791-collab/voiceBox-Pipeline/actions/workflows/prepare-project.yml) でテーマを入力します。既定は `gemini-3.8-flash`・思考 `medium`。GeminiがGoogle検索で記事とYouTubeを探し、Playwrightで画面を撮影した後、画像・公開YouTube動画・記事URLを同じGeminiへ渡してずんだもんと四国めたんの会話を作ります。URLは任意で指定できます。`GEMINI_API_KEY` をActions Secretに設定してください。Gemini APIは調査と台本作成の計2回を呼び、Google検索の利用条件・料金は利用アカウントに依存します。
 
-`research.json` にGeminiの資料要約と検索結果、`materials/manifest.json` に撮影結果、`project.json` に台本と画像の対応を保存します。Geminiの要約は記事全文ではありません。撮れなかった資料があっても、撮影できた資料があれば続行し、失敗は `preparation.json` に残します。画面が1枚も撮れない場合は画像付きの台本を作れません。同じ入力と出力先では、保存済みの調査・撮影や完成台本を再利用します。目標分数・資料件数は目安です。
+`research.json` にGeminiの資料要約と検索結果、`materials/manifest.json` に撮影結果、`project.json` に台本と画像の対応を保存します。Geminiの要約は記事全文ではありません。撮れなかった資料の情報も台本に使い、失敗は `preparation.json` に残します。その資料の台詞には撮影済みの別画面を表示し、`visual_context_only` と記録します。画面が1枚も撮れない場合は画像付きの台本を作れません。同じ入力と出力先では、保存済みの調査・撮影や完成台本を再利用します。目標分数・資料件数は目安です。
 
 ローカルでは次の入口を使います。`request.json` と成果物は利用者の作業フォルダに置きます。
 
@@ -99,6 +99,15 @@ GitHub Actionsから追跡対象ファイルのスナップショットをGoogle
 Geminiのリクエスト例は `{"topic":"解説するテーマ","urls":["https://www.youtube.com/watch?v=動画ID"],"minutes":10,"provider":"gemini"}`。model省略時は `gemini-3.8-flash` です。提供台本を使う場合は `--script` を指定します。`provider:none` は従来どおりRSS・DuckDuckGoで収集のみ行います。OpenCode無料モデルの代替経路は `provider:opencode`・`model:deepseek-v4.1-flash-free` と `OPENCODE_API_KEY` を使います。
 
 OpenCodeからこのGemini経路を使うための `voicebox-research` スキルを同梱しています。OpenCode自体はオープンソースですが、選択したモデルの利用料金は別です。OpenCode Goは任意の契約であり、このスキルの利用に加入は不要です。
+
+OpenCodeを使う場合は `npm install --global opencode-ai@1.19.0` でCLIを用意し、リポジトリ内で次のように依頼します。`OPENCODE_API_KEY` と `GEMINI_API_KEY` はそれぞれ実行環境に設定してください。
+
+```bash
+opencode run -m opencode/deepseek-v4.1-flash-free \
+  'voicebox-research スキルを使い、［調べたいテーマ］の資料と会話台本を準備してください'
+```
+
+OpenCodeは実行の入口です。資料調査と会話台本の作成はGemini 3.8 Flash・mediumが担当します。
 
 生成した `project.json` と `materials/` に立ち絵・背景・`runtime-assets.json` を合わせて入力ZIPにできます。production ZIPに `research-request.json` を入れる場合も、`provider:gemini` の指定だけで調査→撮影→台本→CPU音声→動画まで進みます。Gemini以外の台本APIには従来の許可指定を使います。`PROJECT_READY` は台本と画像の準備完了であり、MP4生成は別工程です。
 

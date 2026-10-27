@@ -164,11 +164,16 @@ def prepare_gemini(request, output, started, *, executable_path=None):
         atomic_json(output / 'preparation.json', {'status': 'FAILED', 'capture_failures': failures})
         raise RuntimeError('No source screenshot was available; see materials/manifest.json')
 
-    prompt = script_prompt({**pack, 'sources': available}, request.get('minutes', 10))
+    captured = {source['id']: source for source in available}
+    script_sources = [captured.get(source['id'], source) for source in pack['sources']]
+    prompt = script_prompt({**pack, 'sources': script_sources}, request.get('minutes', 10))
     atomic_json(output / 'script-prompt.json', prompt)
-    script, details = create_dialogue(prompt, available, output, model)
-    project = normalize_script(script, {**pack, 'sources': available}, flexible=True)
+    script, details = create_dialogue(prompt, script_sources, output, model)
+    project = normalize_script(script, {**pack, 'sources': script_sources}, flexible=True)
     for line in project['lines']:
+        if line.get('source_id') not in captured:
+            line['visual'] = available[0]['id']
+            line['visual_context_only'] = True
         assignment = assignments.get(line['id'])
         if assignment and line.get('source_id') == assignment[0]:
             line['visual'] = assignment[1]
