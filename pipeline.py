@@ -351,6 +351,10 @@ def execute(args):
         atomic_json(state_path, state)
         try:
             records, audio_report = prepare_audio(project, runtime, out, engine_sha)
+            from gemini_transcribe import transcribe_narration
+            words = transcribe_narration(out / 'narration.wav', records)
+            atomic_json(out / 'transcription.json', {'model': 'gemini-3.5-transcribe', 'words': words})
+            atomic_json(out / 'timing.json', {'records': records, 'device': 'cpu', 'sample_rate': 48000})
             state["status"] = "RENDER"
             atomic_json(state_path, state)
             render_seconds, probe = render(project, runtime, out, records)

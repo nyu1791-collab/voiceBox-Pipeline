@@ -85,14 +85,19 @@ def write_subtitles(records, font, layout, output):
             raise ValueError('Subtitle timing must use a positive measured voice interval')
         if cues and start*1000 < cues[-1]['end_ms']-1:
             raise ValueError('Subtitle voice intervals overlap')
-        states = caption_states(row['caption_text'], font, layout, row.get('caption_emphasis_terms') or ())
-        if not states or ''.join(states) != row['caption_text']:
-            raise ValueError('Subtitle states must preserve the full caption text')
-        total, offset = sum(map(len, states)), 0
-        for state in states:
-            begin = round((start+(end-start)*offset/total)*1000)
-            offset += len(state)
-            finish = round((start+(end-start)*offset/total)*1000)
+        if 'caption_cues' in row:
+            timed = [(cue['text'], round(cue['start']*1000), round(cue['end']*1000))
+                     for cue in row['caption_cues']]
+        else:
+            states = caption_states(row['caption_text'], font, layout, row.get('caption_emphasis_terms') or ())
+            if not states or ''.join(states) != row['caption_text']:
+                raise ValueError('Subtitle states must preserve the full caption text')
+            total, offset, timed = sum(map(len, states)), 0, []
+            for state in states:
+                begin = round((start+(end-start)*offset/total)*1000)
+                offset += len(state)
+                timed.append((state, begin, round((start+(end-start)*offset/total)*1000)))
+        for state, begin, finish in timed:
             if finish <= begin:
                 raise ValueError('Subtitle interval is too short for millisecond output')
             lines = wrap_words(state, face, width, strict=True)
@@ -107,6 +112,7 @@ def write_subtitles(records, font, layout, output):
     for suffix in ('srt', 'ass', 'vtt'):
         options = {'keep_ssa_tags': True} if suffix in ('srt', 'vtt') else {}
         document.save(str(output / ('subtitles.'+suffix)), encoding='utf-8', **options)
-    (output / 'subtitles.json').write_text(json.dumps({'timing_basis': 'measured voice intervals; character-weighted caption states',
-        'word_alignment': False, 'cues': cues}, ensure_ascii=False, indent=2)+'\n')
+    aligned = any('caption_cues' in row for row in records)
+    (output / 'subtitles.json').write_text(json.dumps({'timing_basis': 'Gemini word timestamps' if aligned else 'measured voice intervals; character-weighted caption states',
+        'word_alignment': aligned, 'cues': cues}, ensure_ascii=False, indent=2)+'\n')
     return cues

@@ -757,7 +757,10 @@ def render(args):
                 mouth=0 if rms<acting["closed_threshold"] else (1 if rms<acting["wide_threshold"] else 2)
 
             caption=""
-            if r:
+            if r and 'caption_cues' in r:
+                caption = next((cue['text'] for cue in r['caption_cues']
+                                if cue['start'] <= t + args.start < cue['end']), '')
+            elif r:
                 clauses=(caption_states(r["caption_text"], args.font, layout, r.get("caption_emphasis_terms") or ())
                          if layout.get("caption_layout") == "compact_v18"
                          else [x for x in re.split(r"(?<=[。！？])",r["caption_text"]) if x])
