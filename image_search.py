@@ -31,7 +31,8 @@ def collect_related_images(query, outdir, *, limit=8, search=None, fetcher=fetch
             with Image.open(BytesIO(raw)) as picture:
                 picture = ImageOps.exif_transpose(picture)
                 picture.thumbnail((1920, 1080))
-                picture = picture.convert('RGBA' if 'A' in picture.getbands() else 'RGB')
+                transparent = 'A' in picture.getbands() or 'transparency' in picture.info
+                picture = picture.convert('RGBA' if transparent else 'RGB')
                 identity = hashlib.sha256((source + '\n' + image_url).encode()).hexdigest()[:16]
                 filename = identity + '.png'
                 picture.save(outdir / filename, format='PNG')

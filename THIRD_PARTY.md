@@ -15,7 +15,7 @@
 - [CairoSVG](https://github.com/Kozea/CairoSVG)：2.9.1、LGPL-3.0。提供SVGを高解像度PNGへ変換。
 - [Remotion](https://github.com/remotion-dev/remotion)も調査したが、利用条件が異なるため今回の標準依存には追加しない。
 - Actionsのdemoは一時領域で組み立てた短い音声・動く図形・テスト用合成音による機能実行。正規立ち絵を使うproductionと区別する。
-- [DDGS](https://github.com/deedy5/ddgs)：9.16.0、MIT。DuckDuckGoバックエンドで検索。提供先の接続制限に従い、無制限再試行はしない。
+- [DDGS](https://github.com/deedy5/ddgs)：9.16.0、MIT。記事と関連画像の検索に使用し、画像は出典ページのURLと一緒に保存する。提供先の接続制限に従う。
 - [feedparser](https://github.com/kurtmckee/feedparser)：6.0.14、BSD。RSS/Atomを読み取る。PyGoogleNewsの代わりにフィードを直接取得する。
 - [Trafilatura](https://github.com/adbar/trafilatura)：2.3.1、Apache-2.0。記事本文とメタデータの抽出。抽出結果を自動的な事実確認と扱わない。
 - [Playwright](https://github.com/microsoft/playwright-python)：1.64.0、Apache-2.0。ヘッドレスChromiumで参照先を並列撮影。既存の `renderer/material_capture.py` を再利用し、Chrome固定パスを取り除いた。

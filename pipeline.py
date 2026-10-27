@@ -354,8 +354,14 @@ def execute(args):
             atomic_json(state_path, state)
             render_seconds, probe = render(project, runtime, out, records)
             (out / "script.txt").write_text("\n".join(f"{r['speaker']}：{r['text']}" for r in project["lines"]) + "\n")
+            credits = []
+            for visual in project["visuals"]:
+                credit = f"{visual.get('source_credit', '利用者提供素材')} {visual.get('source_url', '')}"
+                if visual.get('source_image_url'):
+                    credit += "\n画像URL: " + visual['source_image_url']
+                credits.append(credit)
             (out / "description.txt").write_text(project["title"] + "\n\nVOICEVOX:ずんだもん\nVOICEVOX:四国めたん\n\n" +
-                "\n".join(f"{v.get('source_credit', '利用者提供素材')} {v.get('source_url', '')}" for v in project["visuals"]) + "\n")
+                "\n".join(credits) + "\n")
             state.update(status="COMPLETE", video=str(out / "video.mp4"), video_sha256=sha256(out / "video.mp4"),
                 bytes=(out / "video.mp4").stat().st_size, duration=float(probe["format"]["duration"]),
                 total_seconds=round(time.monotonic() - started, 3), render_seconds=render_seconds,

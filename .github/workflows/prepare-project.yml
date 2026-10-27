@@ -50,17 +50,25 @@ jobs:
         if: inputs.provider == 'opencode'
         run: npm install --global opencode-ai@1.19.0
       - uses: actions/cache@v4
+        if: inputs.image_query == ''
         with:
           path: ~/.cache/ms-playwright
           key: playwright-chromium-1.64.0-${{ runner.os }}
       - name: Research and browser tools
+        env:
+          IMAGE_QUERY: ${{ inputs.image_query }}
+          PROVIDER: ${{ inputs.provider }}
         run: |
-          if [ '${{ inputs.provider }}' = 'gemini' ]; then
+          if [ -n "$IMAGE_QUERY" ]; then
+            python -m pip install 'Pillow>=10.4,<12' 'ddgs==9.16.0'
+          elif [ "$PROVIDER" = 'gemini' ]; then
             python -m pip install 'Pillow>=10.4,<12' 'playwright==1.64.0' 'ddgs==9.16.0'
           else
             python -m pip install -r requirements.txt
           fi
-          python -m playwright install --with-deps chromium
+          if [ -z "$IMAGE_QUERY" ]; then
+            python -m playwright install --with-deps chromium
+          fi
       - name: Collect and prepare
         if: inputs.capture_url == '' && inputs.image_query == ''
         env:

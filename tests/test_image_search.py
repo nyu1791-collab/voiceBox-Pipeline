@@ -25,5 +25,6 @@ def test_image_search_saves_image_and_source_page():
         result = collect_related_images('テーマ', outdir, search=search, fetcher=fetch)
         item = result['images'][0]
         assert item['source_url'] == source
+        assert item['source_image_url'] == image_url
         assert item['source_credit'] == '写真の出典'
         assert (Path(directory) / item['file']).is_file()
