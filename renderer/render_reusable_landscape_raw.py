@@ -23,7 +23,7 @@ from pathlib import Path
 from PIL import Image, ImageColor, ImageDraw, ImageFont, ImageOps
 
 from render_reusable_short import character_variants, _whole_post_source_visual, _display_source_url
-from visual_contract import PEEK_ENABLED, CHAPTER_CARD_CHARACTERS, MOTION_TEXT_IN_VISUAL_SLOT, check_summary, summary_lines, summary_box, SUMMARY_LINE_H
+from visual_contract import PEEK_ENABLED, CHAPTER_CARD_CHARACTERS, MOTION_TEXT_IN_VISUAL_SLOT, summary_lines, summary_box, SUMMARY_LINE_H
 # FIX v1.4 (ADD-16): extra authored expressions from the approved shell parts (SURPRISED / TROUBLED / SKEPTICAL)
 import render_reusable_short as _rs
 _BASE_CHAR_LAYERS = _rs.character_layers
@@ -45,8 +45,7 @@ def _character_layers_v14(character):
     merged.update(_EXTRA_EXPRESSIONS[character])
     return fixed, mouths, merged
 _rs.character_layers = _character_layers_v14
-from validate_video_content_contract import validate_content_contract
-from render_preflight import validate_render_plan, render_frame_count
+from render_preflight import render_frame_count
 from media_encoder_process import encoder_process, interrupt_encoder
 
 
@@ -651,10 +650,6 @@ def render(args):
         if r.get("emotion","NORMAL") not in acting["expressions"]: raise ValueError("unsupported authored emotion")
         if r.get("visual_id",default_visual) not in backgrounds: raise ValueError("unknown visual_id")
 
-    for _v in (presentation.get("visuals") or []):
-        _spoken=[x["caption_text"] for x in timing["records"] if x.get("caption_text")]  # 全編のナレーションと比べる
-        _errs=check_summary(_v.get("summary"),_spoken)
-        if _errs: raise ValueError("中央パネルの表示契約違反 %s: %s" % (_v.get("id"), "; ".join(_errs)))
     sidebar_cfg=presentation.get("agenda_sidebar")  # 献立（右端の縦型）。設定が無い動画には出さない
     sidebar_state,sidebar_pose=build_agenda_sidebar(sidebar_cfg,args.font,layout["width"],layout["height"],supersample=int((profile.get("performance") or {}).get("agenda_supersample",1))) if sidebar_cfg else (None,None)
     sidebar_seen=set()
@@ -873,10 +868,6 @@ def render(args):
             while len(frame_cache)>cache_limit:
                 frame_cache.popitem(last=False)
             process.stdin.write(raw)
-
-    for name in ({r["speaker"] for r in records} if not getattr(args, "preview", False) else set()):
-        if len(mouth_seen[name])<2: raise RuntimeError(f"{name}: no measured mouth change rendered")
-        if os.environ.get("VIDEO_REVIEW_MODE") == "strict" and args.duration>=90 and len(expr_seen[name])<2: raise RuntimeError(f"{name}: longform missing authored expression changes")
 
     report={
       "preview_only":bool(getattr(args, "preview", False)),

@@ -6,6 +6,7 @@ import hashlib
 import json
 import time
 from pathlib import Path
+from urllib.parse import urlsplit
 
 try:
     from .pipeline_common import atomic_json
@@ -121,6 +122,10 @@ async def capture_targets(targets, outdir, playwright_factory=None, *, executabl
                     response = await goto_with_retry(page, url, retries, retry_delays)
                     if response is None or response.status >= 400:
                         raise ValueError('HTTP ' + str(response.status if response else 'no response'))
+                    if (urlsplit(page.url).hostname or '').startswith('consent.'):
+                        raise ValueError('Consent page instead of source')
+                    if (urlsplit(url).hostname or '').endswith(('youtube.com', 'youtu.be')):
+                        await page.wait_for_timeout(1200)
                     # Font readiness is bounded; analytics must not hold networkidle open.
                     try:
                         await page.wait_for_function('document.fonts.status === "loaded"', timeout=3000)

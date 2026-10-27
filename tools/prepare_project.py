@@ -17,9 +17,20 @@ from renderer.material_capture import capture_targets
 def prepare(request, output, script=None, *, allow_api=False, executable_path=None):
     output = Path(output).resolve()
     output.mkdir(parents=True, exist_ok=True)
+    gemini = script is None and request.get('provider') == 'gemini'
+    saved_request = output / 'request.json'
     if any(output.iterdir()):
-        raise FileExistsError('Use a new empty preparation output folder')
+        if not gemini or not saved_request.is_file() or json.loads(saved_request.read_text()) != request:
+            raise FileExistsError('Use a new output folder for different inputs')
+        receipt = output / 'preparation.json'
+        if receipt.is_file() and (output / 'project.json').is_file():
+            previous = json.loads(receipt.read_text())
+            if previous.get('status') == 'PROJECT_READY':
+                return {**previous, 'reused': True, 'research_and_dialogue_calls': 0}
     started = time.monotonic()
+    if gemini:
+        atomic_json(saved_request, request)
+        return prepare_gemini(request, output, started, executable_path=executable_path)
     pack = research(request)
     atomic_json(output / 'research.json', pack)
     prompt = script_prompt(pack, request.get('minutes', 10))
@@ -101,12 +112,84 @@ def prepare(request, output, script=None, *, allow_api=False, executable_path=No
     return result
 
 
+def prepare_gemini(request, output, started, *, executable_path=None):
+    from gemini_workflow import DEFAULT_MODEL, create_dialogue, research_with_gemini
+
+    model = request.get('model') or DEFAULT_MODEL
+    research_file = output / 'research.json'
+    researched = not research_file.is_file()
+    pack = research_with_gemini(request, model) if researched else json.loads(research_file.read_text())
+    if researched:
+        atomic_json(research_file, pack)
+    targets = []
+    for source in pack['sources']:
+        override = request.get('capture_overrides', {}).get(source['id'], {})
+        targets.append({'id': source['id'], 'url': source['url'], 'viewport_only': True,
+                        'article_region': True,
+                        'region_selector': override.get('selector') or ('#movie_player' if source['is_youtube'] else None),
+                        'heading': override.get('heading'), 'crops': override.get('crops', [])})
+    manifest = output / 'materials/manifest.json'
+    captures = (json.loads(manifest.read_text()) if manifest.is_file() else
+                asyncio.run(capture_targets(targets, output / 'materials', executable_path=executable_path,
+                                            max_workers=4, retry_delays=())))
+    by_id = {capture['id']: capture for capture in captures}
+    available, visuals, failures, assignments = [], [], [], {}
+    for source in pack['sources']:
+        capture = by_id[source['id']]
+        found = [crop for crop in capture.get('crops', []) if crop.get('found')]
+        preferred = next((crop for crop in found if crop['name'] != 'article'), None)
+        preferred = preferred or next(iter(found), None)
+        if not preferred and capture.get('files'):
+            original = capture['files'][0]
+            preferred = {'name': 'page', 'file': original['path'], 'sha256': original['sha256']}
+        if not preferred:
+            failures.append({'id': source['id'], 'error': capture.get('error', 'capture unavailable')})
+            continue
+        source = {**source, 'screenshot': 'materials/' + preferred['file']}
+        available.append(source)
+        override = request.get('capture_overrides', {}).get(source['id'], {})
+        specifications = {crop['name']: crop for crop in override.get('crops', [])}
+        choices = [(source['id'], preferred)] + [
+            (source['id'] + ':' + crop['name'], crop) for crop in found if crop['name'] != 'article']
+        for visual_id, image in choices:
+            specification = specifications.get(image['name'], override)
+            visuals.append({'id': visual_id, 'file': 'materials/' + image['file'],
+                            'source_url': source['url'], 'source_credit': source['title'],
+                            'captured_utc': capture['captured_utc'], 'sha256': image['sha256'],
+                            'source_language': specification.get('source_language'),
+                            'translation': specification.get('translation', '')})
+            for line_id in specification.get('line_ids', []):
+                assignments[line_id] = (source['id'], visual_id)
+    if not available:
+        atomic_json(output / 'preparation.json', {'status': 'FAILED', 'capture_failures': failures})
+        raise RuntimeError('No source screenshot was available; see materials/manifest.json')
+
+    prompt = script_prompt({**pack, 'sources': available}, request.get('minutes', 10))
+    atomic_json(output / 'script-prompt.json', prompt)
+    script, details = create_dialogue(prompt, available, output, model)
+    project = normalize_script(script, {**pack, 'sources': available}, flexible=True)
+    for line in project['lines']:
+        assignment = assignments.get(line['id'])
+        if assignment and line.get('source_id') == assignment[0]:
+            line['visual'] = assignment[1]
+    project['visuals'] = visuals
+    project.setdefault('audio', {'normalize': True})
+    atomic_json(output / 'project.json', project)
+    result = {'status': 'PROJECT_READY', 'sources': len(pack['sources']),
+              'screenshots': len({v['file'] for v in visuals}), 'capture_failures': failures,
+              'lines': len(project['lines']), 'provider': 'gemini', 'model': model,
+              'thinking_level': 'medium', 'research_and_dialogue_calls': int(researched) + 1, **details,
+              'seconds': round(time.monotonic()-started, 3), 'video_created': False}
+    atomic_json(output / 'preparation.json', result)
+    return result
+
+
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--request', type=Path, required=True)
     parser.add_argument('--output', type=Path, required=True)
     parser.add_argument('--script', type=Path, help='Provided JSON script; no LLM call')
-    parser.add_argument('--allow-api', action='store_true', help='Explicitly permit the selected external script API')
+    parser.add_argument('--allow-api', action='store_true', help='Permit the selected non-Gemini script API')
     parser.add_argument('--chromium', default=os.environ.get('PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH'))
     args = parser.parse_args()
     request = json.loads(args.request.read_text())

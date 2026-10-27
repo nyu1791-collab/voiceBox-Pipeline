@@ -14,7 +14,7 @@ on:
         type: string
         required: false
       allow_script_api:
-        description: 'research-request.jsonで指定した台本APIを許可（自動fallbackなし）'
+        description: 'Gemini以外の台本APIを許可。Geminiはrequestで指定するだけ'
         type: boolean
         default: false
       script_provider:
@@ -78,6 +78,14 @@ jobs:
           GROQ_API_KEY: ${{ inputs.script_provider != 'opencode' && secrets.GROQ_API_KEY || '' }}
           OPENCODE_API_KEY: ${{ inputs.mode == 'production' && inputs.allow_script_api && inputs.script_provider == 'opencode' && secrets.OPENCODE_API_KEY || '' }}
         run: python tools/actions_run.py --mode "$RUN_MODE" --engine-dir "$VOICEVOX_DIR" --output "$RUNNER_TEMP/voicebox-output"
+      - name: Store collected sources, screenshots and dialogue
+        if: always() && inputs.mode == 'production'
+        uses: actions/upload-artifact@v4
+        with:
+          name: voicebox-source-pack-${{ github.run_id }}
+          path: ${{ runner.temp }}/voicebox-output/source-pack/
+          if-no-files-found: ignore
+          retention-days: 7
       - name: Store completed MP4 and technical result
         uses: actions/upload-artifact@v4
         with:

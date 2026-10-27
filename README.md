@@ -1,13 +1,13 @@
 # voiceBox Pipeline
 
-**GitHub ActionsにVOICEVOX CPU版を搭載し、10プロセス・各1スレッドで音声を作ります。** GPU・Colab・有料生成APIは使いません。MoviePy・CairoSVG・FFmpegを実際の編集処理へ組み込みました。
+**GitHub ActionsにVOICEVOX CPU版を搭載し、10プロセス・各1スレッドで音声を作ります。** 音声生成にGPU・Colabは使いません。Geminiの利用条件・料金はAPIアカウントによります。MoviePy・CairoSVG・FFmpegを編集処理へ組み込みました。
 
 ```mermaid
 flowchart LR
-  R[テーマ・RSS・検索・指定URL] --> S[記事本文・資料ID]
-  S --> T[提供JSON / 明示選択した台本API]
-  T --> U[Playwright並列撮影・素材台帳]
-  U --> A[提供ZIP / ランナー一時領域]
+  R[テーマ・指定URL] --> S[Gemini検索・動画情報]
+  S --> U[Playwright並列撮影]
+  U --> T[Geminiで会話台本]
+  T --> A[提供ZIP / ランナー一時領域]
   A --> B[VOICEVOX公式CPU版 × 10]
   B --> C[実音声の時刻・字幕・立ち絵]
   C --> D[MoviePy動画・CairoSVG図解・FFmpeg音声]
@@ -25,7 +25,7 @@ flowchart LR
 
 VOICEVOXは[公式CPU版0.25.2](https://github.com/VOICEVOX/voicevox_engine/releases/tag/0.25.2)をSHA-256付きで取得。10個のプロセスが同じ本体を参照します。初回の約1.8GBダウンロードと展開後は、Actionsキャッシュを利用します。各実行の終了時には起動したエンジンを終了します。
 
-成果物は実行ページの **Artifacts → voicebox-video-実行ID**。MP4・サムネイル・技術メトリクス・CPU音声の実行記録を7日保存します。台本・原素材・音声キャッシュ・認証はGitや共有キャッシュへ入れません。動画制作は手動起動。コードのpushでは短い結合テストだけを実行します。
+成果物は実行ページの **Artifacts → voicebox-video-実行ID**。調査入力から制作した場合、資料・スクリーンショット・台本は **voicebox-source-pack-実行ID** にも7日保存します。台本・原素材・音声キャッシュ・認証はGitや共有キャッシュへ入れません。動画制作は手動起動し、結合テストも必要な時だけ実行します。
 
 ## 制作入力ZIP
 
@@ -83,35 +83,24 @@ GitHub Actionsから追跡対象ファイルのスナップショットをGoogle
 
 ## 情報収集からJSON台本へ
 
-[Actions → Research and JSON Project](https://github.com/nyu1791-collab/voiceBox-Pipeline/actions/workflows/prepare-project.yml) でテーマを入力。既定の `provider:none` はAPIキー不要でRSS・DuckDuckGo検索・本文抽出を行い、`research.json` と `script-prompt.json` をArtifactsへ残す。検索結果だけを正しい台本と見なしたり、台本未生成の状態を完成動画と表示したりしません。
+[Actions → Research and JSON Project](https://github.com/nyu1791-collab/voiceBox-Pipeline/actions/workflows/prepare-project.yml) でテーマを入力します。既定は `gemini-3.8-flash`・思考 `medium`。GeminiがGoogle検索で記事とYouTubeを探し、Playwrightで画面を撮影した後、画像・公開YouTube動画・記事URLを同じGeminiへ渡してずんだもんと四国めたんの会話を作ります。URLは任意で指定できます。`GEMINI_API_KEY` をActions Secretに設定してください。Gemini APIは調査と台本作成の計2回を呼び、Google検索の利用条件・料金は利用アカウントに依存します。
 
-GeminiまたはGroqで台本も生成する場合は、providerと具体的なmodelを指定し、選択したサービスのActions Secret `GEMINI_API_KEY` / `GROQ_API_KEY` を設定。1回の明示呼出しだけで、別モデルへのfallbackや自動再試行はありません。無料枠の適用はそのアカウント・モデルの条件によります。Tavily・Perplexityの有料APIは標準経路へ追加していません。
+`research.json` にGeminiの資料要約と検索結果、`materials/manifest.json` に撮影結果、`project.json` に台本と画像の対応を保存します。Geminiの要約は記事全文ではありません。撮れなかった資料があっても、撮影できた資料があれば続行し、失敗は `preparation.json` に残します。画面が1枚も撮れない場合は画像付きの台本を作れません。同じ入力と出力先では、保存済みの調査・撮影や完成台本を再利用します。目標分数・資料件数は目安です。
 
-OpenCode無料版は `provider:opencode`、`model:deepseek-v4.1-flash-free` とSecret `OPENCODE_API_KEY` を使います。[公式告知](https://x.com/opencode/status/2112220734768779441)では、この無料版も1017へ更新済みで、モデルIDの変更は不要です。無料提供は期間限定で、Goの有料モデルとは区別します。直接推論APIの `403 FreeTierError` を回避する独自ヘッダーは作らず、動作を確認した公式 `opencode-ai@1.19.0` のローカルサーバーを使います。ActionsはOpenCode選択時だけCLIを導入します。ローカルでは事前に `npm install --global opencode-ai@1.19.0` を実行してください。
-
-接続だけを調べる場合は [OpenCode Free Connection](https://github.com/nyu1791-collab/voiceBox-Pipeline/actions/workflows/check-opencode-free.yml) を手動実行します。架空資料から短いJSON台本を1回生成して検証し、台本本文を保存せず、モデル・正常終了・トークン数・カタログ上のコスト等の非秘密receiptだけをArtifactsへ残します。音声・動画・記事取得は実行しません。CLIは認証付きのloopbackで一時起動し、他サービスの認証や既存設定を渡さず、ツール要求・再試行・別モデル・不完全な応答を検知したら停止します。
-
-ローカルでは次の入口を使います。`request.json`・`script.json` は利用者の作業フォルダに置き、Gitへコミットしません。
+ローカルでは次の入口を使います。`request.json` と成果物は利用者の作業フォルダに置きます。
 
 ```bash
 .venv/bin/python -m playwright install chromium
 .venv/bin/python tools/prepare_project.py --request /work/request.json --output /work/new-source-pack
 # 提供台本を使う場合：追加API呼出しなし
 .venv/bin/python tools/prepare_project.py --request /work/request.json --script /work/script.json --output /work/new-project
-# 選択した台本APIを明示実行する場合だけ --allow-api を追加
 ```
 
-リクエストは `{"topic":"解説するテーマ","queries":["検索語"],"urls":["https://example.org/article"],"feeds":[],"minutes":10,"max_sources":8,"provider":"none"}`。`news:false`・`search:false` で指定URL/RSSだけの収集にもできます。RSSはGoogle News検索RSSを既定とし、任意のRSS/Atomも指定可能。DDGSが検索、Trafilaturaが本文を抽出します。取得時刻・公開日・URL・本文SHA・失敗は素材パックに残します。本文未取得の記事は台本資料に使いません。
+Geminiのリクエスト例は `{"topic":"解説するテーマ","urls":["https://www.youtube.com/watch?v=動画ID"],"minutes":10,"provider":"gemini"}`。model省略時は `gemini-3.8-flash` です。提供台本を使う場合は `--script` を指定します。`provider:none` は従来どおりRSS・DuckDuckGoで収集のみ行います。OpenCode無料モデルの代替経路は `provider:opencode`・`model:deepseek-v4.1-flash-free` と `OPENCODE_API_KEY` を使います。
 
-提供台本は既存の `title/lines` 形式に加え、画像のような配列形式も受け付けます。`speaker:zundamon/metan` と小文字の `emotion` を正規形式へ変換し、台詞本文は保持。各台詞の `source_id` を `research.json` の資料IDへ結びます。`search_keyword` は同じ検索語の取得済み記事へ対応付けできます。検索語だけで未取得の画面を作ることはありません。
+OpenCodeからこのGemini経路を使うための `voicebox-research` スキルを同梱しています。OpenCode自体はオープンソースですが、選択したモデルの利用料金は別です。OpenCode Goは任意の契約であり、このスキルの利用に加入は不要です。
 
-台本がある場合、Playwright Chromiumが参照する記事だけを最大4並列で撮影。既存Cookieは使わず、広告や本文を勝手に書き換えません。本文見出しと文章を持つ領域を選び、高さ700px以内で切り出し、URL・撮影時刻・SHA付きで `materials/manifest.json` へ記録。関連記事の先頭カードを自動的に本文と決めつけません。撮影失敗は記録して停止し、別画像へ置換しません。全体の `capture_selector`、または `capture_overrides: {"資料ID":{"selector":".article-body","heading":"本文見出し","crops":[{"name":"claim","text":"切り抜く段落の一部"}]}}` で指定できます。指定段落があればその切り抜きを資料として優先し、見つからない場合は停止します。10サイトが何秒で完了するかは接続先次第です。
-
-生成した `project.json` と `materials/` に正規立ち絵・背景・`runtime-assets.json` を合わせて入力ZIPにすれば、そのままproductionへ渡せます。また、production ZIPの `project.json` を `research-request.json` に置き換え、provider/modelを指定し、起動時の `allow_script_api` を有効にすると、記事収集→JSON台本→撮影→CPU音声→動画まで同じランナーで続行します。台本APIのSecretがない場合は自動生成できません。目標分数は台本作成の目安で、最終実尺は音声生成後のmetricsで示します。
-
-OpenCodeの場合は、動画workflowでも `script_provider:opencode` を明示選択してください。ZIPの `research-request.json` のproviderと一致しない場合は停止します。既存のGemini/Groqは既定の `script_provider:request` を使います。提供済みの `project.json` から制作する場合は台本APIを呼びません。
-
-`RESEARCH_READY` は情報収集済み、`PROJECT_READY` は台本と撮影素材の準備済み。MP4完成とは区別します。これらのAPIによる新規台本生成・任意ニュース全体の正確性まで、ローカルの結合テストが保証するものではありません。YouTubeへの自動投稿は含めません。
+生成した `project.json` と `materials/` に立ち絵・背景・`runtime-assets.json` を合わせて入力ZIPにできます。production ZIPに `research-request.json` を入れる場合も、`provider:gemini` の指定だけで調査→撮影→台本→CPU音声→動画まで進みます。Gemini以外の台本APIには従来の許可指定を使います。`PROJECT_READY` は台本と画像の準備完了であり、MP4生成は別工程です。
 
 ## AgentRouterのコーディングAPI接続
 
@@ -121,15 +110,13 @@ OpenCodeの場合は、動画workflowでも `script_provider:opencode` を明示
 
 [Actions → YouTube Search Research](https://github.com/nyu1791-collab/voiceBox-Pipeline/actions/workflows/youtube-research.yml) から手動実行できます。日本語の検索語と結果数（1〜5件）を入力すると、YouTube Data API v3で公開動画のタイトル・チャンネル・公開日・説明文を取得し、`youtube-search.json` をArtifactsへ7日間保存します。APIキーはリポジトリSecret `YOUTUBE_API_KEY` から読み、出力には含めません。`search.list` は1回100クォータ単位を消費するため、手動実行に限定し、定期実行や自動投稿は設定していません。
 
-既存接続はGemini API（台本生成）、Google News RSS/DuckDuckGo（検索）、GitHub Actions、Google Drive同期（Workload Identity Federation）です。Google Custom Search APIなど新しい課金・権限が絡む接続は、使う機能が決まってから追加します。
-
-見直した5工程と実装の境界は [必読ルール](docs/RULES.md#全体を把握する) に記載。現行のresearch-request制作は調査→台本→撮影→音声→描画の順。テーマだけで起動する統一入口、音声と撮影の並列化、共通素材の独立登録、完成MP4のDrive自動転送は未接続です。Google Newsの集約URLから配信元の記事を解決する処理も未実装で、本文未取得を取得成功に数えません。
+見直した5工程と実装の境界は [必読ルール](docs/RULES.md#全体を把握する) に記載。音声と撮影の並列化、共通素材の独立登録、完成MP4のDrive自動転送は未接続です。
 
 必読は [docs/RULES.md](docs/RULES.md) だけ。ツールの由来と条件は [THIRD_PARTY.md](THIRD_PARTY.md)。過去のVM動作記録は [docs/RUN_RESULT.md](docs/RUN_RESULT.md) です。
 
-資料ごとに複数のスクショを切り替える場合、`capture_overrides.<source_id>.crops` の各項目に `name`・引用段落の `text`・対応する台詞IDの `line_ids` を指定します。例：`{"name":"typing","text":"TypeIs","line_ids":[6]}`。同じ出典の台詞だけに割り当てられ、指定段落が見つからない場合は制作を停止します。
+資料ごとに複数のスクショを切り替える場合、`capture_overrides.<source_id>.crops` の各項目に `name`・引用段落の `text`・対応する台詞IDの `line_ids` を指定します。Gemini経路では指定段落が撮れない時、同じページの撮影済み画面を使って続行します。
 
-英語の証拠画像は `visuals` に `source_language: "en"` と `translation` を指定します。引用段落を自動撮影する入力では、`capture_overrides.<source_id>.crops` の各項目へ同じ2項目を設定できます。日本語訳は画像直下に28pxで表示し、長文は全文を保ってページを切り替えます。英語と明示された画像で訳がなければ停止します。台詞字幕とは独立した表示です。
+英語の証拠画像は `visuals` の `translation` に日本語訳を指定できます。訳がある場合は画像直下に表示し、長文はページを切り替えます。訳がない場合も処理は続きます。
 
 BGMは `audio.bgm` のローカル音源を使用し、`bgm_gain_db`（既定−24dB）、`ducking`（既定true）、`bgm_fade_seconds`（既定1.5秒）で調整します。配布元のライセンスと必要なクレジットは作品の概要欄に保持してください。音声結合は映像をコピーし、最後のフレームまで保持します。
 

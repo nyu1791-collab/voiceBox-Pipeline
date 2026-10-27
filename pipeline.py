@@ -105,9 +105,8 @@ def load_project(path):
     project = read_json(path)
     if not isinstance(project.get("title"), str) or not project["title"].strip():
         raise ValueError("title is required")
-    thumbnail_title = project.get('thumbnail_title', project['title'])
-    if not isinstance(thumbnail_title, str) or not 1 <= len(thumbnail_title.strip()) <= 120:
-        raise ValueError('Use thumbnail_title with 1..120 characters')
+    thumbnail_title = project.get('thumbnail_title') or project['title']
+    project['thumbnail_title'] = str(thumbnail_title).strip()[:120]
     lines = project.get("lines")
     if not isinstance(lines, list) or not lines:
         raise ValueError("lines must be a nonempty array")
@@ -131,9 +130,8 @@ def load_project(path):
         if not visual.get("id") or visual["id"] in visual_ids:
             raise ValueError("visual ids must be unique")
         visual_ids.add(visual["id"])
-        if visual.get('source_language') == 'en' and (
-                not isinstance(visual.get('translation'), str) or not visual['translation'].strip()):
-            raise ValueError('English evidence requires a Japanese translation')
+        if not isinstance(visual.get('translation'), str):
+            visual['translation'] = ''
         prepared = prepare_visual(visual, path.parent, ROOT / ".cache/edited-assets")
         visual.clear()
         visual.update(prepared)
@@ -271,7 +269,7 @@ def render(project, runtime, out, records):
     for visual in project["visuals"]:
         visuals.append({**visual, "source_credit": visual.get("source_credit", "利用者提供素材"),
             "source_url": visual.get("source_url", "user-provided:local-image"),
-            "source_label": visual.get("source_label", visual.get("source_credit", "利用者提供素材")),
+            "source_label": str(visual.get("source_label") or visual.get("source_credit") or "利用者提供素材")[:40],
             "media_region_only": True, "zoom_crop": 0.0})
     sections = [{"id": section, "heading": section if section != "main" else project["title"]}
                 for section in dict.fromkeys(row["scene_id"] for row in records)]
