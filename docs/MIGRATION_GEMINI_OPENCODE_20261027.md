@@ -1,8 +1,7 @@
 # 引き継ぎ：Gemini と OpenCode の窓口
 
 更新: 2026-10-28 JST  
-対象: [PR #6](https://github.com/nyu1791-collab/voiceBox-Pipeline/pull/6) / `feat/gemini-research-dialogue-20261027`  
-PR は `main`（`df6b569`）に未マージ。最新コミットは GitHub で確認する。
+対象: [PR #6](https://github.com/nyu1791-collab/voiceBox-Pipeline/pull/6) は `main` にマージ済み（マージコミット `a636f673faf2550aac7f15766d34c90be5370eb5`）。最新コミットは GitHub で確認する。
 
 ## 現在の入口
 
@@ -29,4 +28,4 @@ PR は `main`（`df6b569`）に未マージ。最新コミットは GitHub で�
 
 ## 次の一手
 
-依頼された実題材で、PR #6 の Actions または OpenCode スキルから Gemini 準備を1回実行し、生成された source pack の範囲を報告する。必要なときだけ、その `project.json` と素材を既存の CPU 動画フローへ渡す。
+依頼された実題材で、main の Actions または OpenCode スキルから Gemini 準備を1回実行し、生成された source pack の範囲を報告する。OpenCode スキル経由の実行はまだ未確認。必要なときだけ、その `project.json` と素材を既存の CPU 動画フローへ渡す。
