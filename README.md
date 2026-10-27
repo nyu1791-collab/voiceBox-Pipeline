@@ -89,6 +89,8 @@ GitHub Actionsから追跡対象ファイルのスナップショットをGoogle
 
 YouTube側で再生にログイン確認が必要な場合、動画フレームの代わりに公開ページのタイトルや説明を撮影し、`capture_kind` に記録します。動画の内容はGeminiに公開URLを渡して読み取ります。
 
+YouTubeの撮影だけを行う場合は「Research and JSON Project」の `capture_url` に動画URLを指定します。再生できたときは実際の動画フレームを保存し、確認画面や広告で再生できないときは資料画面を保存して区別します。この実行ではGeminiを呼びません。
+
 YouTube画面の撮影に自分のアカウントを使う場合は、専用のブラウザで正規ログインし、その状態をGitHub Secretに登録します。認証状態はYouTubeの撮影だけに使用し、成果物には保存しません。Google側が追加確認を求める場合は、Actions側から許可を強制できません。
 
 ```bash
