@@ -114,18 +114,11 @@ rm youtube-auth.json
 .venv/bin/python tools/prepare_project.py --request /work/request.json --script /work/script.json --output /work/new-project
 ```
 
-Geminiのリクエスト例は `{"topic":"解説するテーマ","urls":["https://www.youtube.com/watch?v=動画ID"],"minutes":10,"provider":"gemini"}`。model省略時は `gemini-3.8-flash` です。提供台本を使う場合は `--script` を指定します。`provider:none` は従来どおりRSS・DuckDuckGoで収集のみ行います。OpenCode無料モデルの代替経路は `provider:opencode`・`model:deepseek-v4.1-flash-free` と `OPENCODE_API_KEY` を使います。
+Geminiのリクエスト例は `{"topic":"解説するテーマ","urls":["https://www.youtube.com/watch?v=動画ID"],"minutes":10,"provider":"gemini"}`。model省略時は `gemini-3.8-flash` です。提供台本を使う場合は `--script` を指定します。`provider:none` は従来どおりRSS・DuckDuckGoで収集のみ行います。新規の調査・会話作成は `provider:gemini` に統一しています。
 
 OpenCodeからこのGemini経路を使うための `voicebox-research` スキルを同梱しています。OpenCode自体はオープンソースですが、選択したモデルの利用料金は別です。OpenCode Goは任意の契約であり、このスキルの利用に加入は不要です。
 
-OpenCodeを使う場合は `npm install --global opencode-ai@1.19.0` でCLIを用意し、リポジトリ内で次のように依頼します。`OPENCODE_API_KEY` と `GEMINI_API_KEY` はそれぞれ実行環境に設定してください。
-
-```bash
-opencode run -m opencode/deepseek-v4.1-flash-free \
-  'voicebox-research スキルを使い、［調べたいテーマ］の資料と会話台本を準備してください'
-```
-
-OpenCodeは実行の入口です。資料調査と会話台本の作成はGemini 3.8 Flash・mediumが担当します。
+OpenCodeを使う場合は、リポジトリ内で `voicebox-research` スキルにテーマ・任意URL・尺の目安を渡します。OpenCodeは実行の入口であり、資料調査と会話台本の作成は Gemini 3.8 Flash / MEDIUM が担当します。GitHub Actions の既定入口と同じ `tools/prepare_project.py` を使うため、OpenCode専用の別台本providerは選びません。
 
 生成した `project.json` と `materials/` に立ち絵・背景・`runtime-assets.json` を合わせて入力ZIPにできます。production ZIPに `research-request.json` を入れる場合も、`provider:gemini` の指定だけで調査→撮影→台本→CPU音声→動画まで進みます。Gemini以外の台本APIには従来の許可指定を使います。`PROJECT_READY` は台本と画像の準備完了であり、MP4生成は別工程です。
 
@@ -139,7 +132,7 @@ OpenCodeは実行の入口です。資料調査と会話台本の作成はGemini
 
 見直した5工程と実装の境界は [必読ルール](docs/RULES.md#全体を把握する) に記載。音声と撮影の並列化、共通素材の独立登録、完成MP4のDrive自動転送は未接続です。
 
-必読は [docs/RULES.md](docs/RULES.md) だけ。ツールの由来と条件は [THIRD_PARTY.md](THIRD_PARTY.md)。過去のVM動作記録は [docs/RUN_RESULT.md](docs/RUN_RESULT.md) です。
+作業入口は [Gemini と OpenCode の入口](docs/GEMINI_OPENCODE_ENTRYPOINT.md)。ツールの由来と条件は [THIRD_PARTY.md](THIRD_PARTY.md)。過去のVM動作記録は [docs/RUN_RESULT.md](docs/RUN_RESULT.md) です。
 
 資料ごとに複数のスクショを切り替える場合、`capture_overrides.<source_id>.crops` の各項目に `name`・引用段落の `text`・対応する台詞IDの `line_ids` を指定します。Gemini経路では指定段落が撮れない時、同じページの撮影済み画面を使って続行します。
 
