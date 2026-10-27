@@ -161,7 +161,14 @@ def _caption_states(text, font_path, size, width, max_lines, available, gap, emp
             breaks = [i for i in phrase_breaks(remaining, tuple(emphasis)) if i not in protected
                       and fits(remaining[:i])]
             if not breaks:
-                raise ValueError("36pxで字幕を安全に分割できない。台詞計画を確認する")
+                low, high = 1, len(remaining) - 1
+                while low < high:
+                    mid = (low + high + 1) // 2
+                    if fits(remaining[:mid]):
+                        low = mid
+                    else:
+                        high = mid - 1
+                breaks = [low]
             cut = breaks[-1]
             result.append(remaining[:cut])
             remaining = remaining[cut:]
