@@ -13,6 +13,9 @@ on:
       capture_url:
         description: '指定した場合はYouTubeの撮影だけを実行'
         type: string
+      image_query:
+        description: '指定した場合は関連画像の取得だけを実行'
+        type: string
       provider:
         description: '既定はGeminiで調査・撮影・台本作成。noneは情報収集のみ'
         type: choice
@@ -53,13 +56,13 @@ jobs:
       - name: Research and browser tools
         run: |
           if [ '${{ inputs.provider }}' = 'gemini' ]; then
-            python -m pip install 'Pillow>=10.4,<12' 'playwright==1.64.0'
+            python -m pip install 'Pillow>=10.4,<12' 'playwright==1.64.0' 'ddgs==9.16.0'
           else
             python -m pip install -r requirements.txt
           fi
           python -m playwright install --with-deps chromium
       - name: Collect and prepare
-        if: inputs.capture_url == ''
+        if: inputs.capture_url == '' && inputs.image_query == ''
         env:
           TOPIC: ${{ inputs.topic }}
           SOURCE_URLS: ${{ inputs.source_urls }}
@@ -83,7 +86,7 @@ jobs:
           print(json.dumps(result, ensure_ascii=False))
           PY
       - name: Capture YouTube
-        if: inputs.capture_url != ''
+        if: inputs.capture_url != '' && inputs.image_query == ''
         env:
           VIDEO_URL: ${{ inputs.capture_url }}
           YOUTUBE_STORAGE_STATE: ${{ secrets.YOUTUBE_STORAGE_STATE }}
@@ -100,6 +103,21 @@ jobs:
               'article_region': True, 'region_selector': '#movie_player'}],
               Path(os.environ['RUNNER_TEMP'])/'source-pack', retry_delays=()))
           print(json.dumps(result, ensure_ascii=False))
+          PY
+      - name: Collect related images
+        if: inputs.image_query != ''
+        env:
+          IMAGE_QUERY: ${{ inputs.image_query }}
+        run: |
+          python - <<'PY'
+          import json, os
+          from pathlib import Path
+          from image_search import collect_related_images
+          from pipeline import atomic_json
+          root = Path(os.environ['RUNNER_TEMP'])/'source-pack'
+          result = collect_related_images(os.environ['IMAGE_QUERY'], root/'materials/related')
+          atomic_json(root/'materials/related/manifest.json', result)
+          print(json.dumps({'images': len(result['images']), 'errors': result['errors']}, ensure_ascii=False))
           PY
       - uses: actions/upload-artifact@v4
         if: always()

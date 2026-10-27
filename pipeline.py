@@ -3,6 +3,7 @@
 from concurrent.futures import ThreadPoolExecutor
 from contextlib import contextmanager
 from pathlib import Path
+from urllib.parse import urlsplit
 import argparse
 import fcntl
 import hashlib
@@ -267,9 +268,11 @@ def render(project, runtime, out, records):
     write_subtitles(records, runtime['font'], profile['layout'], out)
     visuals = []
     for visual in project["visuals"]:
+        host = urlsplit(visual.get("source_url", "")).hostname
+        label = visual.get("source_label") or ("出典: " + host if host else visual.get("source_credit") or "利用者提供素材")
         visuals.append({**visual, "source_credit": visual.get("source_credit", "利用者提供素材"),
             "source_url": visual.get("source_url", "user-provided:local-image"),
-            "source_label": str(visual.get("source_label") or visual.get("source_credit") or "利用者提供素材")[:40],
+            "source_label": str(label)[:40],
             "media_region_only": True, "zoom_crop": 0.0})
     sections = [{"id": section, "heading": section if section != "main" else project["title"]}
                 for section in dict.fromkeys(row["scene_id"] for row in records)]

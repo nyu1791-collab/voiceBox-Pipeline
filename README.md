@@ -85,7 +85,11 @@ GitHub Actionsから追跡対象ファイルのスナップショットをGoogle
 
 [Actions → Research and JSON Project](https://github.com/nyu1791-collab/voiceBox-Pipeline/actions/workflows/prepare-project.yml) でテーマを入力します。既定は `gemini-3.8-flash`・思考 `medium`。GeminiがGoogle検索で記事とYouTubeを探し、Playwrightで画面を撮影した後、画像・公開YouTube動画・記事URLを同じGeminiへ渡してずんだもんと四国めたんの会話を作ります。URLは任意で指定できます。`GEMINI_API_KEY` をActions Secretに設定してください。Gemini APIは調査と台本作成の計2回を呼び、Google検索の利用条件・料金は利用アカウントに依存します。
 
-`research.json` にGeminiの資料要約と検索結果、`materials/manifest.json` に撮影結果、`project.json` に台本と画像の対応を保存します。Geminiの要約は記事全文ではありません。撮れなかった資料の情報も台本に使い、失敗は `preparation.json` に残します。その資料の台詞には撮影済みの別画面を表示し、`visual_context_only` と記録します。画面が1枚も撮れない場合は画像付きの台本を作れません。同じ入力と出力先では、保存済みの調査・撮影や完成台本を再利用します。目標分数・資料件数は目安です。
+`research.json` にGeminiの資料要約と検索結果、`materials/manifest.json` に撮影結果、`project.json` に台本と画像の対応を保存します。あわせて画像検索で関連画像を取得し、`materials/related/manifest.json` に画像ごとの出典ページを保存します。Geminiは画像を見て、会話に合う画像を選べます。完成映像には出典のドメインを表示し、概要欄には出典ページのURLを残します。画像検索はDDGSを使用し、Google画像検索とは別です。
+
+Geminiの要約は記事全文ではありません。撮れなかった資料の情報も台本に使い、失敗は `preparation.json` に残します。その資料の台詞に別の画像を表示した場合は `visual_context_only` と記録します。画面も関連画像も取得できなければ、画像付きの台本は作れません。同じ入力と出力先では、保存済みの調査・撮影や完成台本を再利用します。目標分数・資料件数は目安です。
+
+画像だけを取得する場合は「Research and JSON Project」の `image_query` に検索語を指定します。この実行ではGeminiを呼びません。
 
 YouTube側で再生にログイン確認が必要な場合、動画フレームの代わりに公開ページのタイトルや説明を撮影し、`capture_kind` に記録します。動画の内容はGeminiに公開URLを渡して読み取ります。
 

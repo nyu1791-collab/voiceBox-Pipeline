@@ -12,6 +12,7 @@ sys.path.insert(0, str(ROOT))
 from pipeline import atomic_json, load_project
 from research import research, script_prompt, generate_script, normalize_script
 from renderer.material_capture import capture_targets
+from image_search import collect_related_images
 
 
 def prepare(request, output, script=None, *, allow_api=False, executable_path=None):
@@ -129,9 +130,27 @@ def prepare_gemini(request, output, started, *, executable_path=None):
                         'region_selector': override.get('selector') or ('#movie_player' if source['is_youtube'] else None),
                         'heading': override.get('heading'), 'crops': override.get('crops', [])})
     manifest = output / 'materials/manifest.json'
-    captures = (json.loads(manifest.read_text()) if manifest.is_file() else
-                asyncio.run(capture_targets(targets, output / 'materials', executable_path=executable_path,
-                                            max_workers=4, retry_delays=())))
+    images_manifest = output / 'materials/related/manifest.json'
+
+    async def collect_materials():
+        async def screenshots():
+            if manifest.is_file():
+                return json.loads(manifest.read_text())
+            return await capture_targets(targets, output / 'materials', executable_path=executable_path,
+                                         max_workers=4, retry_delays=())
+
+        async def images():
+            if images_manifest.is_file():
+                return json.loads(images_manifest.read_text())
+            result = await asyncio.to_thread(collect_related_images, request['topic'],
+                                             output / 'materials/related', limit=request.get('max_images', 8))
+            atomic_json(images_manifest, result)
+            return result
+
+        return await asyncio.gather(screenshots(), images())
+
+    captures, image_results = asyncio.run(collect_materials())
+    related = image_results['images']
     by_id = {capture['id']: capture for capture in captures}
     available, visuals, failures, assignments = [], [], [], {}
     for source in pack['sources']:
@@ -162,28 +181,35 @@ def prepare_gemini(request, output, started, *, executable_path=None):
                             'translation': specification.get('translation', '')})
             for line_id in specification.get('line_ids', []):
                 assignments[line_id] = (source['id'], visual_id)
-    if not available:
-        atomic_json(output / 'preparation.json', {'status': 'FAILED', 'capture_failures': failures})
-        raise RuntimeError('No source screenshot was available; see materials/manifest.json')
+    if not available and not related:
+        atomic_json(output / 'preparation.json', {'status': 'FAILED', 'capture_failures': failures,
+                                                  'image_errors': image_results['errors']})
+        raise RuntimeError('No source image was available; see materials/manifest.json')
 
     captured = {source['id']: source for source in available}
     script_sources = [captured.get(source['id'], source) for source in pack['sources']]
     prompt = script_prompt({**pack, 'sources': script_sources}, request.get('minutes', 10))
     atomic_json(output / 'script-prompt.json', prompt)
-    script, details = create_dialogue(prompt, script_sources, output, model)
+    script, details = create_dialogue(prompt, script_sources, output, model, related_images=related)
     project = normalize_script(script, {**pack, 'sources': script_sources}, flexible=True)
+    image_ids = {image['id'] for image in related}
+    default_visual = available[0]['id'] if available else related[0]['id']
     for line in project['lines']:
         if line.get('source_id') not in captured:
-            line['visual'] = available[0]['id']
+            line['visual'] = default_visual
+            line['visual_context_only'] = True
+        if line.get('visual_id') in image_ids:
+            line['visual'] = line['visual_id']
             line['visual_context_only'] = True
         assignment = assignments.get(line['id'])
         if assignment and line.get('source_id') == assignment[0]:
             line['visual'] = assignment[1]
-    project['visuals'] = visuals
+    project['visuals'] = visuals + related
     project.setdefault('audio', {'normalize': True})
     atomic_json(output / 'project.json', project)
     result = {'status': 'PROJECT_READY', 'sources': len(pack['sources']),
               'screenshots': len({v['file'] for v in visuals}), 'capture_failures': failures,
+              'related_images': len(related), 'image_errors': image_results['errors'],
               'youtube_playback_blocked': sum(bool(c.get('playback_blocked')) for c in captures),
               'lines': len(project['lines']), 'provider': 'gemini', 'model': model,
               'thinking_level': 'medium', 'research_and_dialogue_calls': int(researched) + 1, **details,

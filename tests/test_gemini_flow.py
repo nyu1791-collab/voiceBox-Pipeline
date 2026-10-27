@@ -22,7 +22,8 @@ class GeminiFlowTest(unittest.TestCase):
         discovery = {'sources': [{'url': url, 'title': title, 'summary': '資料の要約'}
                                  for url, title in [(video, '動画'), (article, '記事'), (missing, '欠損')]]}
         dialogue = {'title': '会話', 'lines': [
-            {'speaker': 'ずんだもん', 'text': '動画を見たのだ。', 'source_id': source_id(video)},
+            {'speaker': 'ずんだもん', 'text': '動画を見たのだ。', 'source_id': source_id(video),
+             'visual_id': 'img-reference'},
             {'speaker': '四国めたん', 'text': '記事も紹介するわ。', 'source_id': source_id(article)},
             {'speaker': 'ずんだもん', 'text': '画面が撮れない記事も読むのだ。', 'source_id': source_id(missing)},
             {'speaker': '四国めたん', 'text': '次の話よ。', 'source_id': 'unknown'}]}
@@ -36,7 +37,7 @@ class GeminiFlowTest(unittest.TestCase):
         async def capture(targets, outdir, **kwargs):
             self.assertEqual(len(requests), 1)
             outdir = Path(outdir)
-            outdir.mkdir(parents=True)
+            outdir.mkdir(parents=True, exist_ok=True)
             result = []
             for target in targets:
                 row = {'id': target['id'], 'url': target['url'], 'captured_utc': 'now', 'crops': [], 'files': []}
@@ -49,10 +50,19 @@ class GeminiFlowTest(unittest.TestCase):
                 result.append(row)
             return result
 
+        def images(topic, outdir, *, limit):
+            outdir = Path(outdir)
+            outdir.mkdir(parents=True, exist_ok=True)
+            Image.new('RGB', (100, 70), 'blue').save(outdir/'image.png')
+            return {'query': topic, 'images': [{'id': 'img-reference',
+                    'file': 'materials/related/image.png', 'source_url': 'https://example.com/photo',
+                    'source_credit': '関連画像の出典', 'capture_kind': 'related_image'}], 'errors': []}
+
         with tempfile.TemporaryDirectory() as directory, \
              patch.dict(os.environ, {'GEMINI_API_KEY': 'fixture'}), \
              patch('gemini_workflow.urlopen', side_effect=call), \
-             patch('tools.prepare_project.capture_targets', side_effect=capture):
+             patch('tools.prepare_project.capture_targets', side_effect=capture), \
+             patch('tools.prepare_project.collect_related_images', side_effect=images):
             output = Path(directory) / 'out'
             request = {'topic': '調査', 'provider': 'gemini', 'urls': [video], 'minutes': 45}
             result = prepare(request, output)
@@ -61,6 +71,10 @@ class GeminiFlowTest(unittest.TestCase):
 
         self.assertEqual(result['screenshots'], 2)
         self.assertEqual(result['youtube_inputs'], 1)
+        self.assertEqual(result['related_images'], 1)
+        self.assertEqual(project['lines'][0]['visual'], 'img-reference')
+        visual = next(item for item in project['visuals'] if item['id'] == 'img-reference')
+        self.assertEqual(visual['source_url'], 'https://example.com/photo')
         self.assertEqual(len(result['capture_failures']), 1)
         self.assertTrue(reused['reused'])
         self.assertEqual(len(requests), 2)
@@ -72,7 +86,7 @@ class GeminiFlowTest(unittest.TestCase):
         self.assertIn({'urlContext': {}}, requests[1]['tools'])
         self.assertTrue(any(part.get('fileData', {}).get('fileUri') == video
                             for part in requests[1]['contents'][0]['parts']))
-        self.assertEqual(sum('inlineData' in part for part in requests[1]['contents'][0]['parts']), 2)
+        self.assertEqual(sum('inlineData' in part for part in requests[1]['contents'][0]['parts']), 3)
 
 
 if __name__ == '__main__':

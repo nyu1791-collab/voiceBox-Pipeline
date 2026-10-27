@@ -61,7 +61,8 @@ SCRIPT_SCHEMA = {
         'type': 'array', 'items': {'type': 'object', 'properties': {
             'id': {'type': 'integer'}, 'speaker': {'type': 'string'},
             'emotion': {'type': 'string'}, 'text': {'type': 'string'},
-            'source_id': {'type': 'string'}}, 'required': ['speaker', 'text', 'source_id']}}},
+            'source_id': {'type': 'string'}, 'visual_id': {'type': 'string'}},
+            'required': ['speaker', 'text', 'source_id']}}},
     'required': ['title', 'lines']}
 
 
@@ -111,7 +112,7 @@ def image_part(path):
     return {'inlineData': {'mimeType': 'image/jpeg', 'data': base64.b64encode(data.getvalue()).decode()}}
 
 
-def create_dialogue(prompt, sources, output, model=DEFAULT_MODEL):
+def create_dialogue(prompt, sources, output, model=DEFAULT_MODEL, related_images=()):
     parts = [{'text': prompt['user'] + '\n各画像は直前に記した資料IDの実際の画面です。'
               '動画は内容を読み取り、ウェブ記事はURLコンテキストも使ってから会話台本を作成してください。'
               '画像のない資料も内容を利用できます。根拠を確認できない場合は断定しないでください。'}]
@@ -123,6 +124,13 @@ def create_dialogue(prompt, sources, output, model=DEFAULT_MODEL):
         if source.get('is_youtube') and videos < 10:
             parts.append({'fileData': {'fileUri': source['url']}})
             videos += 1
+    if related_images:
+        parts.append({'text': '以下は検索で見つかった関連画像です。台詞に合う場合はvisual_idに画像IDを指定し、'
+                      'source_idは情報の根拠となる資料IDを指定してください。画像の出典は別に記録します。'})
+    for item in related_images:
+        parts.append({'text': '画像ID: ' + item['id'] + '\n出典ページ: ' + item['source_url'] +
+                              '\n画像の説明: ' + item['source_credit']})
+        parts.append(image_part(output / item['file']))
     tools = [{'urlContext': {}}] if any(not source.get('is_youtube') for source in sources) else []
     script, candidate = call_gemini(model, parts, system=prompt['system'], tools=tools, schema=SCRIPT_SCHEMA)
     return script, {'youtube_inputs': videos, 'url_context': candidate.get('urlContextMetadata', {})}
