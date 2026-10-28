@@ -11,6 +11,7 @@ from urllib.request import Request, urlopen
 from urllib.error import HTTPError, URLError
 
 from research import public_url, source_id
+from gemini_route import request_target
 
 DEFAULT_MODEL = 'gemini-3.8-flash'
 
@@ -25,9 +26,7 @@ def youtube_video(url):
 
 
 def call_gemini(model, parts, *, system, tools=(), schema=None):
-    key = os.environ.get('GEMINI_API_KEY')
-    if not key:
-        raise ValueError('GEMINI_API_KEY is not configured')
+    url, headers = request_target(model)
     config = {'thinkingConfig': {'thinkingLevel': 'MEDIUM'}, 'maxOutputTokens': 32768}
     if schema:
         config['responseFormat'] = {'text': {'mimeType': 'APPLICATION_JSON', 'schema': schema}}
@@ -35,10 +34,9 @@ def call_gemini(model, parts, *, system, tools=(), schema=None):
                'contents': [{'role': 'user', 'parts': parts}], 'generationConfig': config}
     if tools:
         payload['tools'] = list(tools)
-    request = Request('https://generativelanguage.googleapis.com/v1beta/models/' +
-                      quote(model, safe='') + ':generateContent',
+    request = Request(url,
                       data=json.dumps(payload, ensure_ascii=False).encode(),
-                      headers={'x-goog-api-key': key, 'Content-Type': 'application/json'})
+                      headers={**headers, 'Content-Type': 'application/json'})
     for attempt in range(3):
         try:
             with urlopen(request, timeout=240) as response:

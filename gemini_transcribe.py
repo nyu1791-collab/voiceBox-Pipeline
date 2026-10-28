@@ -11,6 +11,7 @@ import subprocess
 import tempfile
 import time
 import wave
+from gemini_route import request_target
 
 MODEL = 'gemini-3.5-transcribe'
 MAX_CHUNK_SECONDS = 1500  # word timestamps support up to 30 minutes per request
@@ -26,17 +27,15 @@ def _atomic_json(path, value):
 
 
 def transcribe(audio_path, mime_type='audio/mpeg', *, api_key=None):
-    key = api_key or os.environ.get('GEMINI_API_KEY')
-    if not key:
-        raise RuntimeError('GEMINI_API_KEY is not configured')
+    url, headers = request_target(MODEL, api_key)
     audio = Path(audio_path).read_bytes()
     payload = {'contents': [{'parts': [{'inlineData': {
         'mimeType': mime_type, 'data': base64.b64encode(audio).decode('ascii')}}]}],
         'generationConfig': {'audioTranscriptionConfig': {
             'languageCodes': ['ja-JP'], 'wordTimestamp': True}}}
-    request = Request('https://generativelanguage.googleapis.com/v1beta/models/' + MODEL + ':generateContent',
+    request = Request(url,
                       data=json.dumps(payload).encode(),
-                      headers={'Content-Type': 'application/json', 'x-goog-api-key': key})
+                      headers={'Content-Type': 'application/json', **headers})
     for attempt in range(3):
         try:
             with urlopen(request, timeout=240) as response:
@@ -145,16 +144,13 @@ def transcribe_narration(audio_path, records, *, cache_dir=None, workers=WORKERS
             except (OSError, ValueError, TypeError):
                 pass
         try:
-            key = api_key or os.environ.get('GEMINI_API_KEY')
-            if not key:
-                raise RuntimeError('GEMINI_API_KEY is not configured')
             chunk_started = time.monotonic()
             with tempfile.TemporaryDirectory(prefix='voicebox-transcribe-') as temporary:
                 path = Path(temporary) / 'audio.mp3'
                 subprocess.run(['ffmpeg', '-v', 'error', '-nostdin', '-y', '-ss', str(start),
                                 '-t', str(end-start), '-i', str(audio_path), '-ac', '1',
                                 '-ar', '16000', '-b:a', '48k', '-threads', '1', str(path)], check=True)
-                response = transcribe(path, api_key=key)
+                response = transcribe(path, api_key=api_key)
             words = []
             for item in response['words']:
                 try:
