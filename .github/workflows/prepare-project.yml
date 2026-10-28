@@ -39,6 +39,7 @@ on:
 permissions:
   contents: read
   actions: read
+  id-token: write
 
 jobs:
   prepare:
@@ -58,6 +59,13 @@ jobs:
         with:
           python-version: '3.11'
           cache: pip
+      - name: Connect Vertex for Gemini
+        if: inputs.provider == 'gemini' && inputs.capture_url == '' && inputs.image_query == ''
+        uses: google-github-actions/auth@v3
+        with:
+          workload_identity_provider: ${{ vars.VOICEBOX_WIF_PROVIDER || 'projects/793547679344/locations/global/workloadIdentityPools/voicebox-actions/providers/github' }}
+          service_account: ${{ vars.VOICEBOX_VERTEX_SERVICE_ACCOUNT || 'voicebox-vertex@project-fdadb4dd-cb77-4270-9cd.iam.gserviceaccount.com' }}
+          create_credentials_file: true
       - uses: actions/cache@v4
         if: inputs.image_query == ''
         with:
@@ -69,6 +77,7 @@ jobs:
           PROVIDER: ${{ inputs.provider }}
           RESUME_RUN_ID: ${{ inputs.resume_run_id }}
         run: |
+          python -m pip install 'google-auth>=2.35,<3' 'requests>=2.31,<3'
           NEED_BROWSER=true
           if [ -n "$IMAGE_QUERY" ]; then
             python -m pip install 'Pillow>=10.4,<12' 'ddgs==9.16.0'
@@ -93,6 +102,7 @@ jobs:
           MODEL: ${{ inputs.model }}
           MINUTES: ${{ inputs.minutes }}
           GEMINI_API_KEY: ${{ inputs.provider == 'gemini' && secrets.GEMINI_API_KEY || '' }}
+          VOICEBOX_VERTEX_PROJECT: ${{ vars.VOICEBOX_VERTEX_PROJECT || 'project-fdadb4dd-cb77-4270-9cd' }}
           YOUTUBE_STORAGE_STATE: ${{ secrets.YOUTUBE_STORAGE_STATE }}
           REGENERATE_DIALOGUE: ${{ inputs.regenerate_dialogue }}
         run: |

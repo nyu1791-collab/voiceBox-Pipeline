@@ -56,7 +56,7 @@ materials/   # 指定画像・SVG・動画・任意BGM
 - **BudouX 0.9.0**：日本語字幕の文節に合わせて改行。英字語・数値と単位・禁則を保護し、36px・最大3行を維持。長文は縮小せず時間分割する。
 - **字幕**：VOICEVOX合成音声を `gemini-3.5-transcribe` に送り、認識文字と単語時刻を動画と `subtitles.srt`・`subtitles.ass`・`subtitles.vtt` に使います。話者はVOICEVOXの記録に対応付けます。APIの時刻は推定であり完全な同期を保証しません。ASSは追加編集用であり、黒板や立ち絵の全レイアウトは含みません。
 
-字幕用の音声は原則として台詞の終わりで分け、最大5件を並列処理します。長さ・並列数は運用上の目安です。認識済み区間は同じ出力先で再開すると再利用します。Actionsでは動画実行の `resume_run_id` に前回の実行IDを指定すると、その成果物から一致する区間を再利用できます（保存期間は7日）。429などの一時的なエラーは最大3回まで試します。認識できない台詞は従来の台本ベース字幕で続行し、`transcription.json` の `status` と `fallback_line_ids` に記録します。`GEMINI_API_KEY` とそのモデルの利用設定が必要で、料金は利用条件に依存します。
+字幕用の音声は原則として台詞の終わりで分け、最大5件を並列処理します。長さ・並列数は運用上の目安です。認識済み区間は同じ出力先で再開すると再利用します。Actionsでは動画実行の `resume_run_id` に前回の実行IDを指定すると、その成果物から一致する区間を再利用できます（保存期間は7日）。429などの一時的なエラーは最大3回まで試します。認識できない台詞は従来の台本ベース字幕で続行し、`transcription.json` の `status` と `fallback_line_ids` に記録します。GitHub ActionsではVertex AIの認証と対象モデルの利用設定が必要で、料金はプロジェクトの請求先と利用条件に依存します。
 
 画像・動画・BGMの相対パスは台本JSONのフォルダが基準。`visuals` の各項目に `id`、出典情報 `source_credit/source_url` を付けます。画像の代わりに `clips` を指定する場合は `file` を省略できます。
 
@@ -86,7 +86,7 @@ GitHub Actionsから追跡対象ファイルのスナップショットをGoogle
 
 ## 情報収集からJSON台本へ
 
-[Actions → Research and JSON Project](https://github.com/nyu1791-collab/voiceBox-Pipeline/actions/workflows/prepare-project.yml) でテーマを入力します。既定は `gemini-3.8-flash`・思考 `medium`。GeminiがGoogle検索で記事とYouTubeを探し、Playwrightで画面を撮影した後、画像・公開YouTube動画・記事URLを同じGeminiへ渡してずんだもんと四国めたんの会話を作ります。URLは任意で指定できます。`GEMINI_API_KEY` をActions Secretに設定してください。Gemini APIは調査と台本作成の計2回を呼び、Google検索の利用条件・料金は利用アカウントに依存します。
+[Actions → Research and JSON Project](https://github.com/nyu1791-collab/voiceBox-Pipeline/actions/workflows/prepare-project.yml) でテーマを入力します。既定は `gemini-3.8-flash`・思考 `medium`。GeminiがGoogle検索で記事とYouTubeを探し、Playwrightで画面を撮影した後、画像・公開YouTube動画・記事URLを同じGeminiへ渡してずんだもんと四国めたんの会話を作ります。URLは任意で指定できます。GitHub ActionsではVertex AIの認証を使います。設定は[接続手順](docs/GEMINI_OPENCODE_ENTRYPOINT.md)を参照してください。Geminiは調査と台本作成の計2回を呼び、Google検索の利用条件・料金は利用アカウントに依存します。
 
 `research.json` にGeminiの資料要約と検索結果、`materials/manifest.json` に撮影結果、`project.json` に台本と画像の対応を保存します。あわせて画像検索で関連画像を取得し、`materials/related/manifest.json` に画像ごとの出典ページを保存します。Geminiは画像を見て、会話に合う画像を選べます。完成映像には出典のドメインを表示し、概要欄には出典ページのURLを残します。画像検索はDDGSを使用し、Google画像検索とは別です。
 

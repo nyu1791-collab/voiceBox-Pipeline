@@ -30,6 +30,7 @@ on:
 permissions:
   contents: read
   actions: read
+  id-token: write
 
 concurrency:
   group: voicebox-cpu-video
@@ -51,6 +52,12 @@ jobs:
         with:
           python-version: '3.11'
           cache: pip
+      - name: Connect Vertex for Gemini and Transcribe
+        uses: google-github-actions/auth@v3
+        with:
+          workload_identity_provider: ${{ vars.VOICEBOX_WIF_PROVIDER || 'projects/793547679344/locations/global/workloadIdentityPools/voicebox-actions/providers/github' }}
+          service_account: ${{ vars.VOICEBOX_VERTEX_SERVICE_ACCOUNT || 'voicebox-vertex@project-fdadb4dd-cb77-4270-9cd.iam.gserviceaccount.com' }}
+          create_credentials_file: true
       - uses: actions/setup-node@v4
         if: inputs.mode == 'production' && inputs.allow_script_api && inputs.script_provider == 'opencode'
         with:
@@ -96,6 +103,7 @@ jobs:
           ALLOW_SCRIPT_API: ${{ inputs.allow_script_api || 'false' }}
           SCRIPT_PROVIDER: ${{ inputs.script_provider || 'request' }}
           GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
+          VOICEBOX_VERTEX_PROJECT: ${{ vars.VOICEBOX_VERTEX_PROJECT || 'project-fdadb4dd-cb77-4270-9cd' }}
           GROQ_API_KEY: ${{ inputs.script_provider != 'opencode' && secrets.GROQ_API_KEY || '' }}
           OPENCODE_API_KEY: ${{ inputs.mode == 'production' && inputs.allow_script_api && inputs.script_provider == 'opencode' && secrets.OPENCODE_API_KEY || '' }}
           YOUTUBE_STORAGE_STATE: ${{ secrets.YOUTUBE_STORAGE_STATE }}

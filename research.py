@@ -136,16 +136,16 @@ def generate_script(prompt, provider, model, *, allow_api=False):
             raise ValueError('OpenCode only permits the free model ' + FREE_MODEL)
         script, _ = generate_opencode_script(prompt, os.environ.get('OPENCODE_API_KEY'))
         return script
-    key = os.environ.get('GEMINI_API_KEY' if provider == 'gemini' else 'GROQ_API_KEY')
-    if not key:
-        raise ValueError('Selected script API credential is not configured')
     if provider == 'gemini':
-        url = 'https://generativelanguage.googleapis.com/v1beta/models/' + quote(model, safe='') + ':generateContent'
-        headers = {'x-goog-api-key': key}
+        from gemini_route import request_target
+        url, headers = request_target(model)
         payload = {'system_instruction': {'parts': [{'text': prompt['system']}]},
             'contents': [{'role': 'user', 'parts': [{'text': prompt['user']}]}],
             'generationConfig': {'responseMimeType': 'application/json', 'maxOutputTokens': 16384}}
     else:
+        key = os.environ.get('GROQ_API_KEY')
+        if not key:
+            raise ValueError('Selected script API credential is not configured')
         url = 'https://api.groq.com/openai/v1/chat/completions'
         headers = {'Authorization': 'Bearer ' + key}
         payload = {'model': model, 'messages': [{'role': 'system', 'content': prompt['system']},
