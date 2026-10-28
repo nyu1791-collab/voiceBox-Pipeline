@@ -13,7 +13,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 from contextlib import closing
 from media_editing import VideoPanels
 from evidence_translation import TranslationCards
-from subtitle_tools import wrap_japanese, phrase_breaks
+from subtitle_tools import wrap_japanese, phrase_breaks, transcript_caption_at
 from motion_diagrams import bound_timeline, active_diagram, cache_state as motion_cache_state, render_panel as render_motion_panel
 import argparse, hashlib, json, math, re, signal, wave, time
 from collections import OrderedDict
@@ -758,8 +758,7 @@ def render(args):
 
             caption=""
             if r and 'caption_cues' in r:
-                caption = next((cue['text'] for cue in r['caption_cues']
-                                if cue['start'] <= t + args.start < cue['end']), '')
+                caption = transcript_caption_at(r, t + args.start)
             elif r:
                 clauses=(caption_states(r["caption_text"], args.font, layout, r.get("caption_emphasis_terms") or ())
                          if layout.get("caption_layout") == "compact_v18"

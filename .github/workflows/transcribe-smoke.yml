@@ -1,0 +1,32 @@
+name: Gemini transcription live check
+
+on:
+  push:
+    branches: [codex/gemini-transcribe-captions]
+
+permissions:
+  contents: read
+
+jobs:
+  check:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - name: Prepare short Japanese sample
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y --no-install-recommends espeak-ng ffmpeg
+          espeak-ng -v ja -s 140 -w "$RUNNER_TEMP/sample.wav" 'こんにちは。これは おんせい にんしき の テストです。'
+          ffmpeg -v error -nostdin -y -i "$RUNNER_TEMP/sample.wav" -ac 1 -ar 16000 -b:a 48k "$RUNNER_TEMP/sample.mp3"
+      - name: Transcribe the sample once
+        env:
+          GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
+        run: |
+          python - <<'PY'
+          import json, os
+          from gemini_transcribe import transcribe
+          result = transcribe(os.path.join(os.environ['RUNNER_TEMP'], 'sample.mp3'))
+          print(json.dumps({'word_count': len(result['words']), 'words': result['words'],
+                            'attempts': result['attempts'], 'usage': result['usage']}, ensure_ascii=False))
+          PY

@@ -9,7 +9,8 @@ flowchart LR
   U --> T[Geminiで会話台本]
   T --> A[提供ZIP / ランナー一時領域]
   A --> B[VOICEVOX公式CPU版 × 10]
-  B --> C[実音声の時刻・字幕・立ち絵]
+  B --> T2[Gemini Transcribe 字幕]
+  T2 --> C[実音声の時刻・字幕・立ち絵]
   C --> D[MoviePy動画・CairoSVG図解・FFmpeg音声]
   D --> E[MP4・SE配置記録・サムネイル → Artifacts]
 ```
@@ -53,11 +54,13 @@ materials/   # 指定画像・SVG・動画・任意BGM
 - **効果音**：台詞に `se: {"file":"materials/pop.wav","offset":0,"gain_db":-18,"duration":0.4}` を指定。`offset` は実音声の台詞開始からの秒数。`audio.transition_se` に同じ形式を指定すると資料が切り替わる台詞の開始へ自動配置。`audio.se: {"pop":"materials/pop.wav"}` の登録があれば台詞を `se:"pop"` と短く書ける。SEは提供素材のみ。映像は再符号化せず、声・BGM・SEを音声側で合成し、配置記録を `sound-effects.json` に残す。
 - **サムネイル**：完成映像の実フレームにタイトルを重ね、1280×720の `thumbnail.png` を出力。`thumbnail_title` で短いタイトルを指定できる。キャラクターの代替画像を生成しない。
 - **BudouX 0.9.0**：日本語字幕の文節に合わせて改行。英字語・数値と単位・禁則を保護し、36px・最大3行を維持。長文は縮小せず時間分割する。
-- **pysubs2 1.8.1**：productionで `subtitles.srt`・`subtitles.ass`・`subtitles.vtt` と、本文・時刻を保持する `subtitles.json` を出力。映像と同じ字幕区間を使う。台詞内の時刻配分は文字数比で、単語単位の同期ではない。ASSは追加編集用であり、元の黒板・字幕板・立ち絵の全レイアウトを再現しない。
+- **字幕**：VOICEVOX合成音声を `gemini-3.5-transcribe` に送り、認識文字と単語時刻を動画と `subtitles.srt`・`subtitles.ass`・`subtitles.vtt` に使います。話者はVOICEVOXの記録に対応付けます。APIの時刻は推定であり完全な同期を保証しません。ASSは追加編集用であり、黒板や立ち絵の全レイアウトは含みません。
+
+字幕用の音声は原則として台詞の終わりで分け、最大5件を並列処理します。長さ・並列数は運用上の目安です。認識済み区間は同じ出力先で再開すると再利用し、429などの一時的なエラーは最大3回まで試します。認識できない台詞は従来の台本ベース字幕で続行し、`transcription.json` の `status` と `fallback_line_ids` に記録します。`GEMINI_API_KEY` とそのモデルの利用設定が必要で、料金は利用条件に依存します。
 
 画像・動画・BGMの相対パスは台本JSONのフォルダが基準。`visuals` の各項目に `id`、出典情報 `source_credit/source_url` を付けます。画像の代わりに `clips` を指定する場合は `file` を省略できます。
 
-標準の最終動画は360p（640×360）・24fps、H.264 preset veryfast・CRF20、AAC 48kHz mono。1280×720のレイアウトで描画し、最終映像を360pへ縮小します。字幕は描画時にZen Maru Gothic Medium 36px・最大3行。声はVOICEVOX style3/2、原音話速1.10・後段1.15。字幕本文を保持し、長文は時間方向に分けます。静止画だけの既存台本も同じ入口で動きます。
+標準の最終動画は360p（640×360）・24fps、H.264 preset veryfast・CRF20、AAC 48kHz mono。1280×720のレイアウトで描画し、最終映像を360pへ縮小します。字幕は描画時にZen Maru Gothic Medium 36px・最大3行。声はVOICEVOX style3/2、原音話速1.10・後段1.15。認識した字幕本文を保持し、長文は時間方向に分けます。静止画だけの既存台本も同じ入口で動きます。
 
 ## Google Driveへリポジトリを同期
 

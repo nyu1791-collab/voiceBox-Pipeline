@@ -352,8 +352,12 @@ def execute(args):
         try:
             records, audio_report = prepare_audio(project, runtime, out, engine_sha)
             from gemini_transcribe import transcribe_narration
-            words = transcribe_narration(out / 'narration.wav', records)
-            atomic_json(out / 'transcription.json', {'model': 'gemini-3.5-transcribe', 'words': words})
+            transcript = transcribe_narration(out / 'narration.wav', records,
+                                             cache_dir=out / 'transcription-cache')
+            atomic_json(out / 'transcription.json', transcript)
+            state['transcription'] = {k: transcript[k] for k in ('model', 'status', 'seconds', 'fallback_line_ids')}
+            print(f"TRANSCRIBE: {transcript['status']} / {len(transcript['chunks'])} chunks / "
+                  f"{len(transcript['fallback_line_ids'])} fallback lines / {transcript['seconds']}s", flush=True)
             atomic_json(out / 'timing.json', {'records': records, 'device': 'cpu', 'sample_rate': 48000})
             state["status"] = "RENDER"
             atomic_json(state_path, state)

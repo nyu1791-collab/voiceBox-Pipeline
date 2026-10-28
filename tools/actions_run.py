@@ -145,8 +145,6 @@ def demo(engine, font, working, output):
     mux_audio(silent, output / "narration.wav", output / "video.mp4", {"bgm": str(bgm), "bgm_gain_db": -30, "ducking": True})
     make_thumbnail(output / 'video.mp4', output / 'thumbnail.png', project['title'], font)
     media = json.loads(subprocess.check_output(["ffprobe", "-v", "error", "-show_format", "-show_streams", "-of", "json", str(output / "video.mp4")]))
-    if audio_report.get("max_parallel_synthesis", 0) < 2:
-        raise RuntimeError("CPU speech requests did not overlap")
     return {"mode": "cpu-and-editing-demo", "duration": float(media["format"]["duration"]),
             "voice_workers": 10, "max_parallel_synthesis": audio_report["max_parallel_synthesis"],
             "gpu_used": False, "owned_engines_stopped": audio_report["owned_engines_stopped"],

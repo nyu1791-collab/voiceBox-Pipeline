@@ -65,8 +65,14 @@ def wrap_japanese(text, font, width, strict=False):
     return result
 
 
+def transcript_caption_at(row, absolute_time):
+    """Return the same transcript cue text used by the subtitle files."""
+    return next((cue['text'] for cue in row['caption_cues']
+                 if cue['start'] <= absolute_time < cue['end']), '')
+
+
 def write_subtitles(records, font, layout, output):
-    """Share caption states with the video; timing within a line remains length-weighted."""
+    """Export the same Gemini-timed captions used by the video."""
     import pysubs2
     from renderer.render_reusable_landscape_raw import caption_states, wrap_words, _font
     output = Path(output)
@@ -113,6 +119,7 @@ def write_subtitles(records, font, layout, output):
         options = {'keep_ssa_tags': True} if suffix in ('srt', 'vtt') else {}
         document.save(str(output / ('subtitles.'+suffix)), encoding='utf-8', **options)
     aligned = any('caption_cues' in row for row in records)
-    (output / 'subtitles.json').write_text(json.dumps({'timing_basis': 'Gemini word timestamps' if aligned else 'measured voice intervals; character-weighted caption states',
-        'word_alignment': aligned, 'cues': cues}, ensure_ascii=False, indent=2)+'\n')
+    (output / 'subtitles.json').write_text(json.dumps({'timing_basis': 'Gemini word timestamps; script fallback where needed' if aligned else 'measured voice intervals; character-weighted caption states',
+        'word_alignment': aligned, 'fallback_line_ids': [row['id'] for row in records if row.get('caption_source') == 'script_fallback'],
+        'cues': cues}, ensure_ascii=False, indent=2)+'\n')
     return cues
