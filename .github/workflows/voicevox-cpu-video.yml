@@ -13,6 +13,10 @@ on:
         description: '制作入力ZIPのHTTPS URL。非公開URLはPROJECT_ZIP_URL Secretを使用'
         type: string
         required: false
+      resume_run_id:
+        description: '前回の動画実行ID。成功した文字起こし区間を再利用（任意）'
+        type: string
+        required: false
       allow_script_api:
         description: 'Gemini以外の台本APIを許可。Geminiはrequestで指定するだけ'
         type: boolean
@@ -25,6 +29,7 @@ on:
 
 permissions:
   contents: read
+  actions: read
 
 concurrency:
   group: voicebox-cpu-video
@@ -68,6 +73,22 @@ jobs:
           key: voicevox-linux-cpu-x64-0.25.2-bab016a966131b89-v1
       - name: Install official VOICEVOX CPU
         run: python tools/install_voicevox.py --directory "$VOICEVOX_DIR"
+      - name: Restore previous transcription
+        if: inputs.resume_run_id != ''
+        continue-on-error: true
+        uses: actions/download-artifact@v4
+        with:
+          name: voicebox-video-${{ inputs.resume_run_id }}
+          path: ${{ runner.temp }}/previous-voicebox
+          github-token: ${{ github.token }}
+          run-id: ${{ inputs.resume_run_id }}
+      - name: Reuse transcription chunks
+        if: inputs.resume_run_id != ''
+        run: |
+          mkdir -p "$RUNNER_TEMP/voicebox-output"
+          if [ -d "$RUNNER_TEMP/previous-voicebox/transcription-cache" ]; then
+            cp -a "$RUNNER_TEMP/previous-voicebox/transcription-cache" "$RUNNER_TEMP/voicebox-output/"
+          fi
       - name: Generate speech and MP4
         env:
           RUN_MODE: ${{ inputs.mode || 'demo' }}
