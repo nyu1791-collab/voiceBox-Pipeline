@@ -18,7 +18,11 @@ def check(model, payload):
         with urlopen(request, timeout=90) as response:
             result = json.load(response)
     except HTTPError as error:
-        print(f'{model}: HTTP {error.code}', flush=True)
+        try:
+            message = json.load(error).get('error', {}).get('message', '')
+        except (ValueError, OSError):
+            message = ''
+        print(f'{model}: HTTP {error.code} {message}', flush=True)
         return False
     candidates = result.get('candidates') or []
     success = bool(candidates) and candidates[0].get('finishReason') == 'STOP'
@@ -29,7 +33,7 @@ def check(model, payload):
 def main():
     text = {'contents': [{'role': 'user', 'parts': [{'text': 'Reply with OK.'}]}],
             'generationConfig': {'maxOutputTokens': 1024}}
-    audio = {'contents': [{'parts': [{'inlineData': {'mimeType': 'audio/wav',
+    audio = {'contents': [{'parts': [{'inlineData': {'mimeType': 'audio/mpeg',
               'data': base64.b64encode(Path(sys.argv[1]).read_bytes()).decode()}}]}],
              'generationConfig': {'audioTranscriptionConfig': {'languageCodes': ['en-US'], 'wordTimestamp': True}}}
     results = [check('gemini-3.5-flash', text), check('gemini-3.8-flash', text),
