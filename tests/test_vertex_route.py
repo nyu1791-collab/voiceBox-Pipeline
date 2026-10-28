@@ -36,3 +36,4 @@ def test_transcribe_and_dialogue_use_shared_vertex_route(tmp_path):
         assert call_gemini('gemini-3.8-flash', [], system='test')[0]['ok']
     for send in (audio_request, text_request):
         assert send.call_args.args[0].full_url == target[0]
+    assert json.loads(audio_request.call_args.args[0].data)['contents'][0]['role'] == 'user'
