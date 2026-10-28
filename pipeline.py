@@ -74,6 +74,17 @@ def lock(path):
         yield
 
 
+@contextmanager
+def private_gemini_key():
+    """Keep the API key out of the local engine and encoder processes."""
+    key = os.environ.pop('GEMINI_API_KEY', None)
+    try:
+        yield key
+    finally:
+        if key is not None:
+            os.environ['GEMINI_API_KEY'] = key
+
+
 def setup(args):
     home = Path.home()
     old = home / "ai-army-local-llm-video"
@@ -118,11 +129,11 @@ def load_project(path):
         ids.add(row["id"])
         if row.get("speaker") not in SPEAKERS or not isinstance(row.get("text"), str) or not row["text"].strip():
             raise ValueError(f"Invalid speaker/text in line {row['id']}")
-        row.setdefault("emotion", "NORMAL")
-        if row["emotion"] not in EMOTIONS:
-            raise ValueError(f"Invalid emotion in line {row['id']}")
+        row['emotion'] = str(row.get('emotion') or 'NORMAL').upper()
+        if row['emotion'] not in EMOTIONS:
+            row['emotion'] = 'NORMAL'
         if not isinstance(row.get("speech_text", row["text"]), str) or not row.get("speech_text", row["text"]).strip():
-            raise ValueError("speech_text must be nonempty")
+            row.pop('speech_text', None)
     visuals = project.get("visuals")
     if not isinstance(visuals, list) or not visuals:
         raise ValueError("At least one visual image is required")
@@ -139,7 +150,8 @@ def load_project(path):
     for row in lines:
         row.setdefault("visual", visuals[0]["id"])
         if row["visual"] not in visual_ids:
-            raise ValueError(f"Unknown visual in line {row['id']}")
+            row['visual'] = visuals[0]['id']
+            row['visual_context_only'] = True
     audio = project.get("audio", {})
     if audio.get("bgm"):
         audio["bgm"] = str((path.parent / audio["bgm"]).resolve())
@@ -259,6 +271,17 @@ def prepare_audio(project, runtime, out, engine_sha):
     return records, report
 
 
+def transcribe_audio(out, records, api_key):
+    from gemini_transcribe import transcribe_narration
+    transcript = transcribe_narration(out / 'narration.wav', records,
+        cache_dir=out / 'transcription-cache', api_key=api_key)
+    atomic_json(out / 'transcription.json', transcript)
+    atomic_json(out / 'timing.json', {'records': records, 'device': 'cpu', 'sample_rate': 48000})
+    print(f"TRANSCRIBE: {transcript['status']} / {len(transcript['chunks'])} chunks / "
+          f"{len(transcript['fallback_line_ids'])} fallback lines / {transcript['seconds']}s", flush=True)
+    return {k: transcript[k] for k in ('model', 'status', 'seconds', 'fallback_line_ids')}
+
+
 def render(project, runtime, out, records):
     started = time.monotonic()
     profile = read_json(ROOT / "config/landscape_profile_v18.json")
@@ -312,6 +335,11 @@ def render(project, runtime, out, records):
 
 
 def execute(args):
+    with private_gemini_key() as api_key:
+        return _execute(args, api_key)
+
+
+def _execute(args, api_key):
     started = time.monotonic()
     project_path, out = args.project.expanduser().resolve(), args.out.expanduser().resolve()
     runtime = read_json(ROOT / "runtime.local.json")
@@ -351,6 +379,7 @@ def execute(args):
         atomic_json(state_path, state)
         try:
             records, audio_report = prepare_audio(project, runtime, out, engine_sha)
+            state['transcription'] = transcribe_audio(out, records, api_key)
             state["status"] = "RENDER"
             atomic_json(state_path, state)
             render_seconds, probe = render(project, runtime, out, records)
@@ -361,8 +390,11 @@ def execute(args):
                 if visual.get('source_image_url'):
                     credit += "\n画像URL: " + visual['source_image_url']
                 credits.append(credit)
+            for source in project.get('source_references', []):
+                if source.get('url'):
+                    credits.append(f"{source.get('title', '')} {source['url']}")
             (out / "description.txt").write_text(project["title"] + "\n\nVOICEVOX:ずんだもん\nVOICEVOX:四国めたん\n\n" +
-                "\n".join(credits) + "\n")
+                "\n".join(dict.fromkeys(credits)) + "\n")
             state.update(status="COMPLETE", video=str(out / "video.mp4"), video_sha256=sha256(out / "video.mp4"),
                 bytes=(out / "video.mp4").stat().st_size, duration=float(probe["format"]["duration"]),
                 total_seconds=round(time.monotonic() - started, 3), render_seconds=render_seconds,

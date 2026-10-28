@@ -13,6 +13,10 @@ on:
         description: '制作入力ZIPのHTTPS URL。非公開URLはPROJECT_ZIP_URL Secretを使用'
         type: string
         required: false
+      resume_run_id:
+        description: '前回の動画実行ID。成功した文字起こし区間を再利用（任意）'
+        type: string
+        required: false
       allow_script_api:
         description: 'Gemini以外の台本APIを許可。Geminiはrequestで指定するだけ'
         type: boolean
@@ -25,6 +29,7 @@ on:
 
 permissions:
   contents: read
+  actions: read
 
 concurrency:
   group: voicebox-cpu-video
@@ -68,13 +73,29 @@ jobs:
           key: voicevox-linux-cpu-x64-0.25.2-bab016a966131b89-v1
       - name: Install official VOICEVOX CPU
         run: python tools/install_voicevox.py --directory "$VOICEVOX_DIR"
+      - name: Restore previous transcription
+        if: inputs.resume_run_id != ''
+        continue-on-error: true
+        uses: actions/download-artifact@v4
+        with:
+          name: voicebox-video-${{ inputs.resume_run_id }}
+          path: ${{ runner.temp }}/previous-voicebox
+          github-token: ${{ github.token }}
+          run-id: ${{ inputs.resume_run_id }}
+      - name: Reuse transcription chunks
+        if: inputs.resume_run_id != ''
+        run: |
+          mkdir -p "$RUNNER_TEMP/voicebox-output"
+          if [ -d "$RUNNER_TEMP/previous-voicebox/transcription-cache" ]; then
+            cp -a "$RUNNER_TEMP/previous-voicebox/transcription-cache" "$RUNNER_TEMP/voicebox-output/"
+          fi
       - name: Generate speech and MP4
         env:
           RUN_MODE: ${{ inputs.mode || 'demo' }}
           PROJECT_ZIP_URL: ${{ inputs.project_zip_url || secrets.PROJECT_ZIP_URL }}
           ALLOW_SCRIPT_API: ${{ inputs.allow_script_api || 'false' }}
           SCRIPT_PROVIDER: ${{ inputs.script_provider || 'request' }}
-          GEMINI_API_KEY: ${{ inputs.script_provider != 'opencode' && secrets.GEMINI_API_KEY || '' }}
+          GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
           GROQ_API_KEY: ${{ inputs.script_provider != 'opencode' && secrets.GROQ_API_KEY || '' }}
           OPENCODE_API_KEY: ${{ inputs.mode == 'production' && inputs.allow_script_api && inputs.script_provider == 'opencode' && secrets.OPENCODE_API_KEY || '' }}
           YOUTUBE_STORAGE_STATE: ${{ secrets.YOUTUBE_STORAGE_STATE }}
@@ -88,6 +109,7 @@ jobs:
           if-no-files-found: ignore
           retention-days: 7
       - name: Store completed MP4 and technical result
+        if: always()
         uses: actions/upload-artifact@v4
         with:
           name: voicebox-video-${{ github.run_id }}
@@ -102,5 +124,9 @@ jobs:
             ${{ runner.temp }}/voicebox-output/subtitles.ass
             ${{ runner.temp }}/voicebox-output/subtitles.vtt
             ${{ runner.temp }}/voicebox-output/subtitles.json
-          if-no-files-found: error
+            ${{ runner.temp }}/voicebox-output/transcription.json
+            ${{ runner.temp }}/voicebox-output/transcription-cache/
+            ${{ runner.temp }}/voicebox-output/timing.json
+            ${{ runner.temp }}/voicebox-output/state.json
+          if-no-files-found: warn
           retention-days: 7

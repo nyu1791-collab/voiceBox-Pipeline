@@ -9,7 +9,8 @@ flowchart LR
   U --> T[Geminiで会話台本]
   T --> A[提供ZIP / ランナー一時領域]
   A --> B[VOICEVOX公式CPU版 × 10]
-  B --> C[実音声の時刻・字幕・立ち絵]
+  B --> T2[Gemini Transcribe 字幕]
+  T2 --> C[実音声の時刻・字幕・立ち絵]
   C --> D[MoviePy動画・CairoSVG図解・FFmpeg音声]
   D --> E[MP4・SE配置記録・サムネイル → Artifacts]
 ```
@@ -20,7 +21,7 @@ flowchart LR
 
 | mode | 動作 |
 |---|---|
-| `demo` | 入力不要。公式VOICEVOXで異なる10台詞をCPU合成し、MoviePyの切り抜き・クロスフェード、CairoSVG、BGMダッキングを実行してMP4を残す機能デモ。正規立ち絵を使うニュース制作とは別。 |
+| `demo` | 入力不要。公式VOICEVOXで異なる10台詞をCPU合成し、Geminiで文字起こしして字幕付きMP4を作る機能デモ。MoviePyの編集、CairoSVG、BGMダッキングも使用。正規立ち絵を使うニュース制作とは別。 |
 | `production` | 提供ZIPから、ずんだもん・四国めたんの正規立ち絵・字幕・口パクを含む動画を制作する。 |
 
 VOICEVOXは[公式CPU版0.25.2](https://github.com/VOICEVOX/voicevox_engine/releases/tag/0.25.2)をSHA-256付きで取得。10個のプロセスが同じ本体を参照します。初回の約1.8GBダウンロードと展開後は、Actionsキャッシュを利用します。各実行の終了時には起動したエンジンを終了します。
@@ -53,11 +54,13 @@ materials/   # 指定画像・SVG・動画・任意BGM
 - **効果音**：台詞に `se: {"file":"materials/pop.wav","offset":0,"gain_db":-18,"duration":0.4}` を指定。`offset` は実音声の台詞開始からの秒数。`audio.transition_se` に同じ形式を指定すると資料が切り替わる台詞の開始へ自動配置。`audio.se: {"pop":"materials/pop.wav"}` の登録があれば台詞を `se:"pop"` と短く書ける。SEは提供素材のみ。映像は再符号化せず、声・BGM・SEを音声側で合成し、配置記録を `sound-effects.json` に残す。
 - **サムネイル**：完成映像の実フレームにタイトルを重ね、1280×720の `thumbnail.png` を出力。`thumbnail_title` で短いタイトルを指定できる。キャラクターの代替画像を生成しない。
 - **BudouX 0.9.0**：日本語字幕の文節に合わせて改行。英字語・数値と単位・禁則を保護し、36px・最大3行を維持。長文は縮小せず時間分割する。
-- **pysubs2 1.8.1**：productionで `subtitles.srt`・`subtitles.ass`・`subtitles.vtt` と、本文・時刻を保持する `subtitles.json` を出力。映像と同じ字幕区間を使う。台詞内の時刻配分は文字数比で、単語単位の同期ではない。ASSは追加編集用であり、元の黒板・字幕板・立ち絵の全レイアウトを再現しない。
+- **字幕**：VOICEVOX合成音声を `gemini-3.5-transcribe` に送り、認識文字と単語時刻を動画と `subtitles.srt`・`subtitles.ass`・`subtitles.vtt` に使います。話者はVOICEVOXの記録に対応付けます。APIの時刻は推定であり完全な同期を保証しません。ASSは追加編集用であり、黒板や立ち絵の全レイアウトは含みません。
+
+字幕用の音声は原則として台詞の終わりで分け、最大5件を並列処理します。長さ・並列数は運用上の目安です。認識済み区間は同じ出力先で再開すると再利用します。Actionsでは動画実行の `resume_run_id` に前回の実行IDを指定すると、その成果物から一致する区間を再利用できます（保存期間は7日）。429などの一時的なエラーは最大3回まで試します。認識できない台詞は従来の台本ベース字幕で続行し、`transcription.json` の `status` と `fallback_line_ids` に記録します。`GEMINI_API_KEY` とそのモデルの利用設定が必要で、料金は利用条件に依存します。
 
 画像・動画・BGMの相対パスは台本JSONのフォルダが基準。`visuals` の各項目に `id`、出典情報 `source_credit/source_url` を付けます。画像の代わりに `clips` を指定する場合は `file` を省略できます。
 
-標準の最終動画は360p（640×360）・24fps、H.264 preset veryfast・CRF20、AAC 48kHz mono。1280×720のレイアウトで描画し、最終映像を360pへ縮小します。字幕は描画時にZen Maru Gothic Medium 36px・最大3行。声はVOICEVOX style3/2、原音話速1.10・後段1.15。字幕本文を保持し、長文は時間方向に分けます。静止画だけの既存台本も同じ入口で動きます。
+標準の最終動画は360p（640×360）・24fps、H.264 preset veryfast・CRF20、AAC 48kHz mono。1280×720のレイアウトで描画し、最終映像を360pへ縮小します。字幕は描画時にZen Maru Gothic Medium 36px・最大3行。声はVOICEVOX style3/2、原音話速1.10・後段1.15。認識した字幕本文を保持し、長文は時間方向に分けます。静止画だけの既存台本も同じ入口で動きます。
 
 ## Google Driveへリポジトリを同期
 
@@ -87,7 +90,7 @@ GitHub Actionsから追跡対象ファイルのスナップショットをGoogle
 
 `research.json` にGeminiの資料要約と検索結果、`materials/manifest.json` に撮影結果、`project.json` に台本と画像の対応を保存します。あわせて画像検索で関連画像を取得し、`materials/related/manifest.json` に画像ごとの出典ページを保存します。Geminiは画像を見て、会話に合う画像を選べます。完成映像には出典のドメインを表示し、概要欄には出典ページのURLを残します。画像検索はDDGSを使用し、Google画像検索とは別です。
 
-Geminiの要約は記事全文ではありません。撮れなかった資料の情報も台本に使い、失敗は `preparation.json` に残します。その資料の台詞に別の画像を表示した場合は `visual_context_only` と記録します。画面も関連画像も取得できない場合は、出典画像と区別した無地の背景で続けます。同じ入力と出力先では、保存済みの調査・撮影や完成台本を再利用します。目標分数・資料件数は目安です。
+Geminiの要約は記事全文ではありません。撮れなかった資料の情報も台本に使い、失敗は `preparation.json` に残します。その資料の台詞に別の画像を表示した場合は `visual_context_only` と記録します。画面も関連画像も取得できない場合は、出典画像と区別した無地の背景で続けます。従来の台本経路でも、資料画面や指定部分を撮れない場合は代わりの画像で続行し、取得できなかったことと出典URLを残します。同じ入力と出力先では、保存済みの調査・撮影や完成台本を再利用します。目標分数・資料件数は目安です。
 
 画像だけを取得する場合は「Research and JSON Project」の `image_query` に検索語を指定します。この実行ではGeminiを呼びません。
 
