@@ -1,13 +1,23 @@
 import json
 import tempfile
 import unittest
+import sys
+import types
 from pathlib import Path
 from unittest.mock import patch
 
 from tools.prepare_project import prepare
+from research import collect_sources
 
 
 class PreparationFallbackTest(unittest.TestCase):
+    def test_requested_source_count_is_not_a_strict_limit(self):
+        urls = ['https://example.com/' + str(i) for i in range(25)]
+        with patch.dict(sys.modules, {'feedparser': types.SimpleNamespace()}):
+            selected, _ = collect_sources({'topic': 'テスト', 'urls': urls, 'max_sources': 25,
+                                           'news': False, 'search': False})
+        self.assertEqual(len(selected), 25)
+
     def test_missing_captures_keep_the_dialogue_and_sources(self):
         sources = [{'id': key, 'title': key, 'url': 'https://example.com/' + key,
                     'text': 'source text', 'extraction_status': 'EXTRACTED'} for key in ('a', 'b')]

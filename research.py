@@ -34,13 +34,9 @@ def collect_sources(request):
     """No silent retries or provider changes; discovery errors remain in the pack."""
     import feedparser
     sources, errors = {}, []
-    limit = int(request.get('max_sources', 8))
-    if not 1 <= limit <= 20:
-        raise ValueError('max_sources must be between 1 and 20')
+    limit = max(1, int(request.get('max_sources') or 8))
     queries = request.get('queries', [request['topic']])
     feeds = list(request.get('feeds', []))
-    if len(queries) > 10 or len(feeds) > 10 or len(request.get('urls', [])) > 20:
-        raise ValueError('Use at most 10 queries/feeds and 20 explicit URLs')
     if request.get('news', True):
         feeds += ['https://news.google.com/rss/search?' + urlencode({'q': q, 'hl': 'ja', 'gl': 'JP', 'ceid': 'JP:ja'}) for q in queries]
 
@@ -68,7 +64,7 @@ def collect_sources(request):
         from ddgs import DDGS
         for query in queries:
             try:
-                for row in DDGS(timeout=15).text(query, max_results=min(limit, 6), backend='duckduckgo'):
+                for row in DDGS(timeout=15).text(query, max_results=limit, backend='duckduckgo'):
                     add(row['href'], row.get('title', ''), row.get('body', ''), query=query, origin='search')
             except Exception as error:
                 errors.append({'stage': 'search', 'query': query, 'error': type(error).__name__})
