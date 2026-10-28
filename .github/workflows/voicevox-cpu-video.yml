@@ -74,7 +74,7 @@ jobs:
           PROJECT_ZIP_URL: ${{ inputs.project_zip_url || secrets.PROJECT_ZIP_URL }}
           ALLOW_SCRIPT_API: ${{ inputs.allow_script_api || 'false' }}
           SCRIPT_PROVIDER: ${{ inputs.script_provider || 'request' }}
-          GEMINI_API_KEY: ${{ inputs.script_provider != 'opencode' && secrets.GEMINI_API_KEY || '' }}
+          GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
           GROQ_API_KEY: ${{ inputs.script_provider != 'opencode' && secrets.GROQ_API_KEY || '' }}
           OPENCODE_API_KEY: ${{ inputs.mode == 'production' && inputs.allow_script_api && inputs.script_provider == 'opencode' && secrets.OPENCODE_API_KEY || '' }}
           YOUTUBE_STORAGE_STATE: ${{ secrets.YOUTUBE_STORAGE_STATE }}

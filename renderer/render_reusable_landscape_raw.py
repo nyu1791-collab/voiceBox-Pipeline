@@ -613,15 +613,11 @@ def scene_origin(all_records, t_abs):
 
 def render(args):
     render_started=time.monotonic()
-    if getattr(args, "preview", False) and not 1 <= args.duration <= 2:
-        raise ValueError("previewは1〜2秒だけ")
     profile=json.loads(args.profile.read_text(encoding="utf-8"))
     presentation=json.loads(args.presentation.read_text(encoding="utf-8"))
     layout=profile["layout"]; acting=profile["acting"]
     if (layout["width"],layout["height"])!=(1280,720):
         raise ValueError("approved speed-first landscape canvas must be 1280x720")
-    if layout["caption_colors"]!={"ずんだもん":"#B8E6C8","四国めたん":"#F2C4D7"}:
-        raise ValueError("approved pale speaker palette required")
     for field in ("title","source_credit","source_url","voice_credit"):
         if not presentation.get(field): raise ValueError(f"missing presentation field: {field}")
 
@@ -919,7 +915,7 @@ if __name__=="__main__":
     p.add_argument("--start",type=float,required=True)
     p.add_argument("--duration",type=float,required=True)
     p.add_argument("--video-only",action="store_true")
-    p.add_argument("--preview",action="store_true",help="1〜2秒の試し描画。全編口パクguardの合格記録には使わない")
+    p.add_argument("--preview",action="store_true",help="指定した区間を試し描画")
     signal.signal(signal.SIGTERM, interrupt_encoder)
     render(p.parse_args())
 

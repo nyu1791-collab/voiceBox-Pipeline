@@ -21,7 +21,7 @@ flowchart LR
 
 | mode | 動作 |
 |---|---|
-| `demo` | 入力不要。公式VOICEVOXで異なる10台詞をCPU合成し、MoviePyの切り抜き・クロスフェード、CairoSVG、BGMダッキングを実行してMP4を残す機能デモ。正規立ち絵を使うニュース制作とは別。 |
+| `demo` | 入力不要。公式VOICEVOXで異なる10台詞をCPU合成し、Geminiで文字起こしして字幕付きMP4を作る機能デモ。MoviePyの編集、CairoSVG、BGMダッキングも使用。正規立ち絵を使うニュース制作とは別。 |
 | `production` | 提供ZIPから、ずんだもん・四国めたんの正規立ち絵・字幕・口パクを含む動画を制作する。 |
 
 VOICEVOXは[公式CPU版0.25.2](https://github.com/VOICEVOX/voicevox_engine/releases/tag/0.25.2)をSHA-256付きで取得。10個のプロセスが同じ本体を参照します。初回の約1.8GBダウンロードと展開後は、Actionsキャッシュを利用します。各実行の終了時には起動したエンジンを終了します。

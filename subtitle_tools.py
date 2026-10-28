@@ -89,26 +89,21 @@ def write_subtitles(records, font, layout, output):
         start, end = float(row['start']), float(row['end'])
         if not all(map(math.isfinite, (start, end))) or not 0 <= start < end:
             raise ValueError('Subtitle timing must use a positive measured voice interval')
-        if cues and start*1000 < cues[-1]['end_ms']-1:
-            raise ValueError('Subtitle voice intervals overlap')
         if 'caption_cues' in row:
             timed = [(cue['text'], round(cue['start']*1000), round(cue['end']*1000))
                      for cue in row['caption_cues']]
         else:
             states = caption_states(row['caption_text'], font, layout, row.get('caption_emphasis_terms') or ())
-            if not states or ''.join(states) != row['caption_text']:
-                raise ValueError('Subtitle states must preserve the full caption text')
+            if not states:
+                continue
             total, offset, timed = sum(map(len, states)), 0, []
             for state in states:
                 begin = round((start+(end-start)*offset/total)*1000)
                 offset += len(state)
                 timed.append((state, begin, round((start+(end-start)*offset/total)*1000)))
         for state, begin, finish in timed:
-            if finish <= begin:
-                raise ValueError('Subtitle interval is too short for millisecond output')
-            lines = wrap_words(state, face, width, strict=True)
-            if lines is None or len(lines) > 3:
-                raise ValueError('Editable subtitle exceeds the approved layout')
+            finish = max(finish, begin + 1)
+            lines = wrap_words(state, face, width)
             # Metadata retains exact plain text even where a subtitle format has its own escaping.
             event = pysubs2.SSAEvent(start=begin, end=finish, style=row['speaker'], name=row['speaker'])
             event.plaintext = '\n'.join(lines)

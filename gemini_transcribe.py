@@ -25,8 +25,8 @@ def _atomic_json(path, value):
     os.replace(name, path)
 
 
-def transcribe(audio_path, mime_type='audio/mpeg'):
-    key = os.environ.get('GEMINI_API_KEY')
+def transcribe(audio_path, mime_type='audio/mpeg', *, api_key=None):
+    key = api_key or os.environ.get('GEMINI_API_KEY')
     if not key:
         raise RuntimeError('GEMINI_API_KEY is not configured')
     audio = Path(audio_path).read_bytes()
@@ -120,7 +120,7 @@ def _append_words(records, words):
     return fallback
 
 
-def transcribe_narration(audio_path, records, *, cache_dir=None, workers=WORKERS):
+def transcribe_narration(audio_path, records, *, cache_dir=None, workers=WORKERS, api_key=None):
     started = time.monotonic()
     audio_path = Path(audio_path)
     with wave.open(str(audio_path), 'rb') as audio:
@@ -145,7 +145,8 @@ def transcribe_narration(audio_path, records, *, cache_dir=None, workers=WORKERS
             except (OSError, ValueError, TypeError):
                 pass
         try:
-            if not os.environ.get('GEMINI_API_KEY'):
+            key = api_key or os.environ.get('GEMINI_API_KEY')
+            if not key:
                 raise RuntimeError('GEMINI_API_KEY is not configured')
             chunk_started = time.monotonic()
             with tempfile.TemporaryDirectory(prefix='voicebox-transcribe-') as temporary:
@@ -153,7 +154,7 @@ def transcribe_narration(audio_path, records, *, cache_dir=None, workers=WORKERS
                 subprocess.run(['ffmpeg', '-v', 'error', '-nostdin', '-y', '-ss', str(start),
                                 '-t', str(end-start), '-i', str(audio_path), '-ac', '1',
                                 '-ar', '16000', '-b:a', '48k', '-threads', '1', str(path)], check=True)
-                response = transcribe(path)
+                response = transcribe(path, api_key=key)
             words = []
             for item in response['words']:
                 try:

@@ -85,6 +85,11 @@ def production(project_path, engine, font, output, assets_root=None):
 
 
 def demo(engine, font, working, output):
+    with pipeline.private_gemini_key() as api_key:
+        return _demo(engine, font, working, output, api_key)
+
+
+def _demo(engine, font, working, output, api_key):
     """A generated functional fixture, not a committed production script or native-character fallback."""
     import numpy as np
     from PIL import Image, ImageDraw, ImageFont
@@ -109,6 +114,8 @@ def demo(engine, font, working, output):
     pipeline.atomic_json(working / "project.json", project)
     records, audio_report = pipeline.prepare_audio(project, {"engine_dir": str(engine)}, output,
         pipeline.engine_fingerprint(engine, pipeline.engine_fingerprint_cache(engine)))
+    transcription = pipeline.transcribe_audio(output, records, api_key)
+    pipeline.write_subtitles(records, font, profile['layout'], output)
     duration = records[-1]["end"]
     source_clips = []
     for index, color in enumerate(((70, 150, 110), (75, 120, 185))):
@@ -123,13 +130,15 @@ def demo(engine, font, working, output):
     edit_sequence(source_clips, edited, transition=0.35)
     caption_clips = []
     for row in records:
-        image = Image.new("RGBA", (1280, 160))
-        draw = ImageDraw.Draw(image)
-        draw.rounded_rectangle((100, 2, 1180, 154), 18,
-            fill="#e2f3e8" if row["speaker"] == "ずんだもん" else "#fae7ef", outline="#57886a", width=3)
-        draw.text((130, 17), row["speaker"], font=ImageFont.truetype(str(font), 26), fill="#254632")
-        draw.text((130, 66), row["caption_text"], font=ImageFont.truetype(str(font), 36), fill="#254632")
-        caption_clips.append(ImageClip(np.array(image)).with_start(row["start"]).with_duration(row["end"]-row["start"]).with_position((0, 540)))
+        cues = row.get('caption_cues') or [{'text': row['caption_text'], 'start': row['start'], 'end': row['end']}]
+        for cue in cues:
+            image = Image.new("RGBA", (1280, 160))
+            draw = ImageDraw.Draw(image)
+            draw.rounded_rectangle((100, 2, 1180, 154), 18,
+                fill="#e2f3e8" if row["speaker"] == "ずんだもん" else "#fae7ef", outline="#57886a", width=3)
+            draw.text((130, 17), row["speaker"], font=ImageFont.truetype(str(font), 26), fill="#254632")
+            draw.text((130, 66), cue["text"], font=ImageFont.truetype(str(font), 36), fill="#254632")
+            caption_clips.append(ImageClip(np.array(image)).with_start(cue["start"]).with_duration(cue["end"]-cue["start"]).with_position((0, 540)))
     silent = working / "silent.mp4"
     with ImageClip(visual["file"]).resized((1280, 720)).with_duration(duration) as background:
         with VideoFileClip(str(edited), audio=False) as clip:
@@ -146,7 +155,8 @@ def demo(engine, font, working, output):
     make_thumbnail(output / 'video.mp4', output / 'thumbnail.png', project['title'], font)
     media = json.loads(subprocess.check_output(["ffprobe", "-v", "error", "-show_format", "-show_streams", "-of", "json", str(output / "video.mp4")]))
     return {"mode": "cpu-and-editing-demo", "duration": float(media["format"]["duration"]),
-            "voice_workers": 10, "max_parallel_synthesis": audio_report["max_parallel_synthesis"],
+            "voice_workers": 10, "max_parallel_synthesis": audio_report.get("max_parallel_synthesis", 0),
+            "transcription": transcription,
             "gpu_used": False, "owned_engines_stopped": audio_report["owned_engines_stopped"],
             "engine_ready_seconds": audio_report["engine_ready_seconds"],
             "audio_phase_seconds": audio_report["audio_phase_seconds"],

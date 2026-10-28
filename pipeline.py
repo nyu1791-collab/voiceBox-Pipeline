@@ -74,6 +74,17 @@ def lock(path):
         yield
 
 
+@contextmanager
+def private_gemini_key():
+    """Keep the API key out of the local engine and encoder processes."""
+    key = os.environ.pop('GEMINI_API_KEY', None)
+    try:
+        yield key
+    finally:
+        if key is not None:
+            os.environ['GEMINI_API_KEY'] = key
+
+
 def setup(args):
     home = Path.home()
     old = home / "ai-army-local-llm-video"
@@ -259,6 +270,17 @@ def prepare_audio(project, runtime, out, engine_sha):
     return records, report
 
 
+def transcribe_audio(out, records, api_key):
+    from gemini_transcribe import transcribe_narration
+    transcript = transcribe_narration(out / 'narration.wav', records,
+        cache_dir=out / 'transcription-cache', api_key=api_key)
+    atomic_json(out / 'transcription.json', transcript)
+    atomic_json(out / 'timing.json', {'records': records, 'device': 'cpu', 'sample_rate': 48000})
+    print(f"TRANSCRIBE: {transcript['status']} / {len(transcript['chunks'])} chunks / "
+          f"{len(transcript['fallback_line_ids'])} fallback lines / {transcript['seconds']}s", flush=True)
+    return {k: transcript[k] for k in ('model', 'status', 'seconds', 'fallback_line_ids')}
+
+
 def render(project, runtime, out, records):
     started = time.monotonic()
     profile = read_json(ROOT / "config/landscape_profile_v18.json")
@@ -312,6 +334,11 @@ def render(project, runtime, out, records):
 
 
 def execute(args):
+    with private_gemini_key() as api_key:
+        return _execute(args, api_key)
+
+
+def _execute(args, api_key):
     started = time.monotonic()
     project_path, out = args.project.expanduser().resolve(), args.out.expanduser().resolve()
     runtime = read_json(ROOT / "runtime.local.json")
@@ -351,14 +378,7 @@ def execute(args):
         atomic_json(state_path, state)
         try:
             records, audio_report = prepare_audio(project, runtime, out, engine_sha)
-            from gemini_transcribe import transcribe_narration
-            transcript = transcribe_narration(out / 'narration.wav', records,
-                                             cache_dir=out / 'transcription-cache')
-            atomic_json(out / 'transcription.json', transcript)
-            state['transcription'] = {k: transcript[k] for k in ('model', 'status', 'seconds', 'fallback_line_ids')}
-            print(f"TRANSCRIBE: {transcript['status']} / {len(transcript['chunks'])} chunks / "
-                  f"{len(transcript['fallback_line_ids'])} fallback lines / {transcript['seconds']}s", flush=True)
-            atomic_json(out / 'timing.json', {'records': records, 'device': 'cpu', 'sample_rate': 48000})
+            state['transcription'] = transcribe_audio(out, records, api_key)
             state["status"] = "RENDER"
             atomic_json(state_path, state)
             render_seconds, probe = render(project, runtime, out, records)

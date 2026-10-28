@@ -28,7 +28,9 @@ class SubtitleExportTest(unittest.TestCase):
         rows = [{'id': 1, 'speaker': 'ずんだもん', 'caption_text': '元の台本', 'start': 0, 'end': 1,
                  'caption_cues': [{'text': '音声認識', 'start': .1, 'end': .8}]},
                 {'id': 2, 'speaker': '四国めたん', 'caption_text': '予備', 'start': 1, 'end': 2,
-                 'caption_source': 'script_fallback'}]
+                 'caption_source': 'script_fallback'},
+                {'id': 3, 'speaker': 'ずんだもん', 'caption_text': '短い', 'start': 1.5, 'end': 1.8,
+                 'caption_cues': [{'text': '短い', 'start': 1.5001, 'end': 1.5002}]}]
         with tempfile.TemporaryDirectory() as folder, patch.dict(sys.modules, {
                 'pysubs2': fake_subtitles, 'renderer.render_reusable_landscape_raw': fake_renderer}):
             cues = write_subtitles(rows, '/unused/font', {}, Path(folder))
@@ -37,6 +39,7 @@ class SubtitleExportTest(unittest.TestCase):
         self.assertEqual(transcript_caption_at(rows[0], .5), cues[0]['text'])
         self.assertEqual(metadata['fallback_line_ids'], [2])
         self.assertTrue(metadata['word_alignment'])
+        self.assertEqual((cues[2]['start_ms'], cues[2]['end_ms']), (1500, 1501))
 
 
 if __name__ == '__main__':

@@ -57,7 +57,7 @@ class TranscriptionRouteTest(unittest.TestCase):
             def encode(args, **kwargs):
                 Path(args[-1]).write_text(args[args.index('-ss') + 1])
             calls = []
-            def recognize(path):
+            def recognize(path, *, api_key=None):
                 start = float(Path(path).read_text())
                 calls.append(start)
                 if start == 120:
@@ -108,7 +108,7 @@ class TranscriptionRouteTest(unittest.TestCase):
             records = [{'id': i+1, 'caption_text': '台詞', 'start': i*120, 'end': (i+1)*120}
                        for i in range(3)]
             barrier = threading.Barrier(3)
-            def recognize(path):
+            def recognize(path, *, api_key=None):
                 barrier.wait(timeout=2)
                 return {'words': [{'word': '音声', 'startOffset': '0.1s', 'endOffset': '1s'}],
                         'attempts': 1, 'usage': {}}
@@ -135,12 +135,20 @@ class TranscriptionRouteTest(unittest.TestCase):
                 self.assertTrue(data['generationConfig']['audioTranscriptionConfig']['wordTimestamp'])
                 self.assertGreater(len(data['contents'][0]['parts'][0]['inlineData']['data']), 100)
                 return BytesIO(json.dumps(payload).encode())
-            with patch.dict(os.environ, {'GEMINI_API_KEY': 'test'}), \
-                 patch('gemini_transcribe.urlopen', side_effect=respond):
-                result = transcribe_narration(audio, records)
+            with patch.dict(os.environ), patch('gemini_transcribe.urlopen', side_effect=respond):
+                os.environ.pop('GEMINI_API_KEY', None)
+                result = transcribe_narration(audio, records, api_key='test')
             self.assertEqual(result['status'], 'complete')
             self.assertEqual(records[0]['caption_cues'][0],
                              {'text': 'こんにちは', 'start': .1, 'end': .8})
+
+    def test_key_is_hidden_from_local_processes_and_restored(self):
+        from pipeline import private_gemini_key
+        with patch.dict(os.environ, {'GEMINI_API_KEY': 'test'}):
+            with private_gemini_key() as key:
+                self.assertEqual(key, 'test')
+                self.assertNotIn('GEMINI_API_KEY', os.environ)
+            self.assertEqual(os.environ['GEMINI_API_KEY'], 'test')
 
 
 if __name__ == '__main__':
