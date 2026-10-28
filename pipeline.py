@@ -129,11 +129,11 @@ def load_project(path):
         ids.add(row["id"])
         if row.get("speaker") not in SPEAKERS or not isinstance(row.get("text"), str) or not row["text"].strip():
             raise ValueError(f"Invalid speaker/text in line {row['id']}")
-        row.setdefault("emotion", "NORMAL")
-        if row["emotion"] not in EMOTIONS:
-            raise ValueError(f"Invalid emotion in line {row['id']}")
+        row['emotion'] = str(row.get('emotion') or 'NORMAL').upper()
+        if row['emotion'] not in EMOTIONS:
+            row['emotion'] = 'NORMAL'
         if not isinstance(row.get("speech_text", row["text"]), str) or not row.get("speech_text", row["text"]).strip():
-            raise ValueError("speech_text must be nonempty")
+            row.pop('speech_text', None)
     visuals = project.get("visuals")
     if not isinstance(visuals, list) or not visuals:
         raise ValueError("At least one visual image is required")
@@ -150,7 +150,8 @@ def load_project(path):
     for row in lines:
         row.setdefault("visual", visuals[0]["id"])
         if row["visual"] not in visual_ids:
-            raise ValueError(f"Unknown visual in line {row['id']}")
+            row['visual'] = visuals[0]['id']
+            row['visual_context_only'] = True
     audio = project.get("audio", {})
     if audio.get("bgm"):
         audio["bgm"] = str((path.parent / audio["bgm"]).resolve())
