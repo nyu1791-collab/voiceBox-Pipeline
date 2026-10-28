@@ -15,6 +15,20 @@ from renderer.material_capture import capture_targets
 from image_search import collect_related_images
 
 
+def neutral_visual(output):
+    from PIL import Image
+    fallback = output / 'materials' / 'neutral-background.png'
+    fallback.parent.mkdir(parents=True, exist_ok=True)
+    Image.new('RGB', (1280, 720), (35, 56, 48)).save(fallback)
+    return {'id': 'neutral-background', 'file': 'materials/neutral-background.png',
+            'source_credit': '背景', 'capture_kind': 'neutral_background'}
+
+
+def source_references(sources):
+    return [{'title': source.get('title', ''), 'url': source.get('final_url') or source.get('url', '')}
+            for source in sources]
+
+
 def prepare(request, output, script=None, *, allow_api=False, executable_path=None,
             regenerate_dialogue=False):
     output = Path(output).resolve()
@@ -63,62 +77,71 @@ def prepare(request, output, script=None, *, allow_api=False, executable_path=No
     targets = []
     for source in selected:
         override = request.get('capture_overrides', {}).get(source['id'], {})
-        targets.append({'id': source['id'], 'url': source.get('final_url', source['url']),
+        targets.append({'id': source['id'], 'url': source.get('final_url') or source['url'],
             'viewport_only': True, 'article_region': True,
             'region_selector': override.get('selector', request.get('capture_selector')),
             'heading': override.get('heading'), 'crops': override.get('crops', [])})
-    # Bind explicit paragraph choices to dialogue before launching the browser.
+    # Use valid paragraph choices; missing choices fall back to an available image.
     assignments = {}
     for target in targets:
-        names = set()
+        names, crops = set(), []
         for crop in target['crops']:
-            name = crop['name']
-            if name in names or name == 'article':
-                raise ValueError('Crop names must be unique and not article')
+            name = crop.get('name')
+            if not name or name in names or name == 'article':
+                continue
             names.add(name)
+            crops.append(crop)
             for line_id in crop.get('line_ids', []):
                 line = next((r for r in project['lines'] if r['id'] == line_id), None)
-                if line is None or line['source_id'] != target['id']:
-                    raise ValueError('Crop line_ids must reference dialogue using the same source')
-                if line_id in assignments:
-                    raise ValueError('Each dialogue line can select only one crop')
-                assignments[line_id] = target['id'] + ':' + name
-    captures = asyncio.run(capture_targets(targets, output / 'materials', executable_path=executable_path,
-                                          max_workers=4, retry_delays=()))
+                if line and line['source_id'] == target['id']:
+                    assignments.setdefault(line_id, target['id'] + ':' + name)
+        target['crops'] = crops
+    try:
+        captures = asyncio.run(capture_targets(targets, output / 'materials', executable_path=executable_path,
+                                              max_workers=4, retry_delays=()))
+    except Exception as error:
+        captures = [{'id': target['id'], 'error': type(error).__name__} for target in targets]
     by_id = {c['id']: c for c in captures}
     visuals = []
     failures = []
     for source in selected:
-        capture = by_id[source['id']]
+        capture = by_id.get(source['id'], {'error': 'capture unavailable'})
         requested = [c for c in capture.get('crops', []) if c['name'] != 'article']
         crop = next((c for c in requested if c.get('found')), None) or next(
             (c for c in capture.get('crops', []) if c.get('found')), None)
         if capture.get('error') or not crop or any(not c.get('found') for c in requested):
             failures.append(source['id'])
+        if not crop:
             continue
         # Keep the original source ID as the backwards-compatible default image.
         choices = [(source['id'], crop)] + [
-            (source['id'] + ':' + item['name'], item) for item in requested]
+            (source['id'] + ':' + item['name'], item) for item in requested if item.get('found')]
         override = request.get('capture_overrides', {}).get(source['id'], {})
-        specifications = {c['name']: c for c in override.get('crops', [])}
+        specifications = {c.get('name'): c for c in override.get('crops', [])}
         for visual_id, item in choices:
             specification = specifications.get(item['name'], override)
             visuals.append({'id': visual_id, 'file': 'materials/' + item['file'],
-                'source_url': source.get('final_url', source['url']), 'source_credit': source['title'],
-                'captured_utc': capture['captured_utc'], 'sha256': item['sha256'],
+                'source_url': source.get('final_url') or source['url'], 'source_credit': source['title'],
+                'captured_utc': capture.get('captured_utc'), 'sha256': item['sha256'],
                 'source_language': specification.get('source_language', override.get('source_language')),
                 'translation': specification.get('translation', '')})
-    if failures:
-        atomic_json(output / 'preparation.json', {'status': 'FAILED', 'capture_failures': failures})
-        raise RuntimeError('Referenced page capture failed; see materials/manifest.json')
+    if not visuals:
+        visuals.append(neutral_visual(output))
+    visual_ids = {visual['id'] for visual in visuals}
     for line in project['lines']:
-        if line['id'] in assignments:
+        if assignments.get(line['id']) in visual_ids:
             line['visual'] = assignments[line['id']]
+        elif line['visual'] not in visual_ids:
+            line['visual'] = visuals[0]['id']
+            line['visual_context_only'] = True
     project['visuals'] = visuals
+    project['source_references'] = source_references(selected)
     project.setdefault('audio', {'normalize': True})
     atomic_json(output / 'project.json', project)
     load_project(output / 'project.json')
-    result = {'status': 'PROJECT_READY', 'sources': len(pack['sources']), 'screenshots': len({v['file'] for v in visuals}),
+    result = {'status': 'PROJECT_READY', 'sources': len(pack['sources']),
+              'screenshots': len({v['file'] for v in visuals if v.get('capture_kind') != 'neutral_background'}),
+              'capture_failures': failures,
               'lines': len(project['lines']), 'provider': provider if generated else 'provided',
               'seconds': round(time.monotonic()-started, 3), 'video_created': False}
     atomic_json(output / 'preparation.json', result)
@@ -199,12 +222,7 @@ def prepare_gemini(request, output, started, *, executable_path=None):
     if not available and not related:
         # A neutral background lets the conversation continue without pretending
         # that a failed capture is a source image.
-        from PIL import Image
-        fallback = output / 'materials' / 'neutral-background.png'
-        fallback.parent.mkdir(parents=True, exist_ok=True)
-        Image.new('RGB', (1280, 720), (35, 56, 48)).save(fallback)
-        visuals.append({'id': 'neutral-background', 'file': 'materials/neutral-background.png',
-                        'source_credit': '背景', 'capture_kind': 'neutral_background'})
+        visuals.append(neutral_visual(output))
 
     captured = {source['id']: source for source in available}
     script_sources = [captured.get(source['id'], source) for source in pack['sources']]
@@ -229,6 +247,7 @@ def prepare_gemini(request, output, started, *, executable_path=None):
         project['lines'][0]['visual'] = related[0]['id']
         project['lines'][0]['visual_context_only'] = True
     project['visuals'] = visuals + related
+    project['source_references'] = source_references(pack['sources'])
     project.setdefault('audio', {'normalize': True})
     atomic_json(output / 'project.json', project)
     result = {'status': 'PROJECT_READY', 'sources': len(pack['sources']),

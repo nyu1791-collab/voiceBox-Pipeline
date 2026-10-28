@@ -390,8 +390,11 @@ def _execute(args, api_key):
                 if visual.get('source_image_url'):
                     credit += "\n画像URL: " + visual['source_image_url']
                 credits.append(credit)
+            for source in project.get('source_references', []):
+                if source.get('url'):
+                    credits.append(f"{source.get('title', '')} {source['url']}")
             (out / "description.txt").write_text(project["title"] + "\n\nVOICEVOX:ずんだもん\nVOICEVOX:四国めたん\n\n" +
-                "\n".join(credits) + "\n")
+                "\n".join(dict.fromkeys(credits)) + "\n")
             state.update(status="COMPLETE", video=str(out / "video.mp4"), video_sha256=sha256(out / "video.mp4"),
                 bytes=(out / "video.mp4").stat().st_size, duration=float(probe["format"]["duration"]),
                 total_seconds=round(time.monotonic() - started, 3), render_seconds=render_seconds,

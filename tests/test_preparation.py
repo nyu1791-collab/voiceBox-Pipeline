@@ -90,10 +90,9 @@ def test_explicit_paragraph_is_used_or_reported_missing(source_site, tmp_path, t
         project = json.loads((output/'project.json').read_text())
         assert project['visuals'][0]['file'].endswith('_claim.png')
     else:
-        with pytest.raises(RuntimeError, match='capture failed'):
-            prepare(request, output, script, executable_path=shutil.which('chromium'))
-        assert json.loads((output/'preparation.json').read_text())['status'] == 'FAILED'
-        assert not (output/'project.json').exists()
+        result = prepare(request, output, script, executable_path=shutil.which('chromium'))
+        assert result['status'] == 'PROJECT_READY' and sid in result['capture_failures']
+        assert (output/'project.json').exists()
 
 
 def test_api_is_explicit_and_unknown_source_is_rejected(monkeypatch):
@@ -176,19 +175,24 @@ def test_dialogue_selects_distinct_source_paragraphs(source_site, tmp_path):
 
 
 @pytest.mark.parametrize('line_ids', [[999], [11, 11]])
-def test_invalid_crop_dialogue_binding_stops_before_capture(source_site, tmp_path, monkeypatch, line_ids):
+def test_invalid_crop_dialogue_binding_uses_available_image(source_site, tmp_path, monkeypatch, line_ids):
     url = source_site + '/article.html'
     sid = source_id(url)
-    def no_capture(*args, **kwargs):
-        pytest.fail('invalid mapping must be rejected before browser startup')
-    monkeypatch.setattr('tools.prepare_project.capture_targets', no_capture)
+    async def fake_capture(*args, **kwargs):
+        return [{'id': sid, 'captured_utc': 'now', 'crops': [
+            {'name': 'article', 'found': True, 'file': 'article.png', 'sha256': 'test'},
+            {'name': 'audio', 'found': True, 'file': 'audio.png', 'sha256': 'test'}]}]
+    monkeypatch.setattr('tools.prepare_project.capture_targets', fake_capture)
+    monkeypatch.setattr('tools.prepare_project.load_project', lambda path: None)
     request = {'topic': 'CPU音声', 'urls': [url], 'news': False, 'search': False,
                'capture_overrides': {sid: {'crops': [
                    {'name': 'audio', 'text': 'waveform', 'line_ids': line_ids}]}}}
     script = [{'id': 11, 'speaker': 'zundamon', 'text': '説明なのだ。', 'source_id': sid},
               {'id': 12, 'speaker': 'metan', 'text': '説明よ。', 'source_id': sid}]
-    with pytest.raises(ValueError, match='line_ids|only one crop'):
-        prepare(request, tmp_path / 'invalid-mapping', script)
+    output = tmp_path / 'invalid-mapping'
+    assert prepare(request, output, script)['status'] == 'PROJECT_READY'
+    project = json.loads((output/'project.json').read_text())
+    assert project['lines'][0]['visual'] == (sid if line_ids == [999] else sid + ':audio')
 
 
 def test_bgm_fades_and_preserves_all_video_packets(tmp_path):
