@@ -29,7 +29,7 @@ def _atomic_json(path, value):
 def transcribe(audio_path, mime_type='audio/mpeg', *, api_key=None):
     url, headers = request_target(MODEL, api_key)
     audio = Path(audio_path).read_bytes()
-    payload = {'contents': [{'parts': [{'inlineData': {
+    payload = {'contents': [{'role': 'user', 'parts': [{'inlineData': {
         'mimeType': mime_type, 'data': base64.b64encode(audio).decode('ascii')}}]}],
         'generationConfig': {'audioTranscriptionConfig': {
             'languageCodes': ['ja-JP'], 'wordTimestamp': True}}}

@@ -33,7 +33,7 @@ def check(model, payload):
 def main():
     text = {'contents': [{'role': 'user', 'parts': [{'text': 'Reply with OK.'}]}],
             'generationConfig': {'maxOutputTokens': 1024}}
-    audio = {'contents': [{'parts': [{'inlineData': {'mimeType': 'audio/mpeg',
+    audio = {'contents': [{'role': 'user', 'parts': [{'inlineData': {'mimeType': 'audio/mpeg',
               'data': base64.b64encode(Path(sys.argv[1]).read_bytes()).decode()}}]}],
              'generationConfig': {'audioTranscriptionConfig': {'languageCodes': ['en-US'], 'wordTimestamp': True}}}
     results = [check('gemini-3.5-flash', text), check('gemini-3.8-flash', text),
