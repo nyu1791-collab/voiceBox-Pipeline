@@ -26,11 +26,11 @@ class PreparationFallbackTest(unittest.TestCase):
             {'id': 1, 'speaker': 'ずんだもん', 'text': '一つ目', 'source_id': 'a'},
             {'id': 2, 'speaker': '四国めたん', 'text': '二つ目', 'source_id': 'b'}]}
         request = {'topic': 'テスト', 'capture_overrides': {'a': {'crops': [
-            {'name': 'claim', 'line_ids': [1, 999]}]}}}
+            {'name': 'claim', 'text': 'missing', 'line_ids': [1, 999]}]}}}
 
         async def capture(*args, **kwargs):
             return [{'id': 'a', 'captured_utc': 'now', 'crops': [
-                {'name': 'article', 'found': True, 'file': 'article.png', 'sha256': 'test'},
+                {'name': 'article', 'found': True, 'file': 'article.png', 'sha256': 'test', 'kind': 'youtube_metadata'},
                 {'name': 'claim', 'found': False}]}, {'id': 'b', 'error': 'HTTP 403'}]
 
         with tempfile.TemporaryDirectory() as folder, \
@@ -45,6 +45,7 @@ class PreparationFallbackTest(unittest.TestCase):
         self.assertEqual(project['lines'][0]['visual'], 'a')
         self.assertEqual(project['lines'][1]['visual'], 'a')
         self.assertTrue(project['lines'][1]['visual_context_only'])
+        self.assertEqual(project['visuals'][0]['capture_kind'], 'youtube_metadata')
         self.assertEqual([s['url'] for s in project['source_references']],
                          ['https://example.com/a', 'https://example.com/b'])
 
@@ -62,6 +63,21 @@ class PreparationFallbackTest(unittest.TestCase):
         self.assertEqual(result['screenshots'], 0)
         self.assertEqual(project['visuals'][0]['capture_kind'], 'neutral_background')
         self.assertTrue(all(row['visual_context_only'] for row in project['lines']))
+
+        async def blocked(*args, **kwargs):
+            return [{'id': 'a', 'playback_blocked': True, 'files': [
+                {'path': 'blocked.png', 'sha256': 'test'}], 'crops': []},
+                {'id': 'b', 'error': 'HTTP 403'}]
+
+        with tempfile.TemporaryDirectory() as folder, \
+             patch('tools.prepare_project.research', return_value=pack), \
+             patch('tools.prepare_project.capture_targets', side_effect=blocked), \
+             patch('tools.prepare_project.load_project'):
+            output = Path(folder) / 'prepared'
+            result = prepare(request, output, script)
+            project = json.loads((output / 'project.json').read_text())
+        self.assertEqual(result['capture_failures'], ['a', 'b'])
+        self.assertEqual(project['visuals'][0]['capture_kind'], 'page_playback_blocked')
 
 
 if __name__ == '__main__':

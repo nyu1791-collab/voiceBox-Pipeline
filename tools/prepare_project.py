@@ -87,7 +87,7 @@ def prepare(request, output, script=None, *, allow_api=False, executable_path=No
         names, crops = set(), []
         for crop in target['crops']:
             name = crop.get('name')
-            if not name or name in names or name == 'article':
+            if not name or not crop.get('text') or name in names or name == 'article':
                 continue
             names.add(name)
             crops.append(crop)
@@ -111,6 +111,10 @@ def prepare(request, output, script=None, *, allow_api=False, executable_path=No
             (c for c in capture.get('crops', []) if c.get('found')), None)
         if capture.get('error') or not crop or any(not c.get('found') for c in requested):
             failures.append(source['id'])
+        if not crop and capture.get('files'):
+            original = capture['files'][0]
+            crop = {'name': 'page', 'file': original['path'], 'sha256': original['sha256'],
+                    'kind': 'page_playback_blocked' if capture.get('playback_blocked') else 'page'}
         if not crop:
             continue
         # Keep the original source ID as the backwards-compatible default image.
@@ -123,6 +127,7 @@ def prepare(request, output, script=None, *, allow_api=False, executable_path=No
             visuals.append({'id': visual_id, 'file': 'materials/' + item['file'],
                 'source_url': source.get('final_url') or source['url'], 'source_credit': source['title'],
                 'captured_utc': capture.get('captured_utc'), 'sha256': item['sha256'],
+                'capture_kind': item.get('kind', 'paragraph'),
                 'source_language': specification.get('source_language', override.get('source_language')),
                 'translation': specification.get('translation', '')})
     if not visuals:
