@@ -11,7 +11,7 @@
 
 `provider=gemini` が既定で、Gemini 3.8 Flash / MEDIUM が Google Search・URL Context を使い、資料・関連画像を集めた後に、ずんだもんと四国めたんの会話を作る。成果物は `source-pack-<run_id>`。動画はこの入口では作らない。
 
-GitHub ActionsのGemini調査・台本・TranscribeはVertex AIを使用する。既定プロジェクトは `project-fdadb4dd-cb77-4270-9cd`、GitHub OIDCと専用サービスアカウントで認証する。初回は対象プロジェクトで `bash tools/setup_vertex_wif.sh` を実行する。別プロジェクトを使うときは `GOOGLE_CLOUD_PROJECT` を指定してセットアップし、Actions変数 `VOICEBOX_VERTEX_PROJECT`、`VOICEBOX_WIF_PROVIDER`、`VOICEBOX_VERTEX_SERVICE_ACCOUNT` に出力値を登録する。実際の請求は、そのプロジェクトにリンクしたCloud Billingアカウントに適用される。クレジットの対象・残額はCloud Billingで確認する。ローカルでも `VOICEBOX_VERTEX_PROJECT` とApplication Default Credentialsを指定できる。未指定時のみ従来の `GEMINI_API_KEY` を使用する。
+GitHub ActionsのGemini調査・台本・TranscribeはVertex AIを使用する。既定プロジェクトは `project-fdadb4dd-cb77-4270-9cd`、GitHub OIDCと専用サービスアカウントで認証する。初回は対象プロジェクトで `bash tools/setup_vertex_wif.sh` を実行する。別プロジェクトを使うときは `GOOGLE_CLOUD_PROJECT` を指定してセットアップし、Actions変数 `VOICEBOX_VERTEX_PROJECT`、`VOICEBOX_WIF_PROVIDER`、`VOICEBOX_VERTEX_SERVICE_ACCOUNT` に出力値を登録する。実際の請求は、そのプロジェクトにリンクしたCloud Billingアカウントに適用される。クレジットの対象・残額はCloud Billingで確認する。ローカルでも `VOICEBOX_VERTEX_PROJECT` とApplication Default Credentialsを指定する。APIキー経路を使う場合だけ `VOICEBOX_GEMINI_ROUTE=api_key` を明示し、`GEMINI_API_KEY` を設定する。Vertexの設定・認証失敗時に自動で切り替えない。経路・モデル・Vertexのプロジェクトとリージョンはログに残す。
 
 OpenCode から使うときも、`.opencode/skills/voicebox-research` が同じ `tools/prepare_project.py` を呼ぶ。OpenCode の旧 DeepSeek 台本 provider は、この Gemini 準備経路とは別の旧経路であり、新規の調査・会話作成には選ばない。
 

@@ -3,6 +3,8 @@ import json
 import os
 from unittest.mock import Mock, patch
 
+import pytest
+
 
 def test_vertex_takes_precedence_over_api_key():
     from gemini_route import request_target
@@ -37,3 +39,15 @@ def test_transcribe_and_dialogue_use_shared_vertex_route(tmp_path):
     for send in (audio_request, text_request):
         assert send.call_args.args[0].full_url == target[0]
     assert json.loads(audio_request.call_args.args[0].data)['contents'][0]['role'] == 'user'
+
+
+def test_no_implicit_api_key_fallback():
+    from gemini_route import request_target
+
+    with patch.dict(os.environ, {'GEMINI_API_KEY': 'fixture'}, clear=True):
+        with pytest.raises(RuntimeError, match='VOICEBOX_VERTEX_PROJECT'):
+            request_target('gemini-3.5-transcribe')
+    with patch.dict(os.environ, {'GEMINI_API_KEY': 'fixture', 'VOICEBOX_GEMINI_ROUTE': 'api_key'}, clear=True):
+        url, headers = request_target('gemini-3.5-transcribe')
+        assert 'generativelanguage.googleapis.com' in url
+        assert headers['x-goog-api-key'] == 'fixture'
