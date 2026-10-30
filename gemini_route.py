@@ -1,11 +1,26 @@
-"""Choose the configured Vertex project or the explicitly supplied Gemini API key."""
+"""Select one explicit Gemini route; never silently fall back to an API key."""
 import os
+import random
 from urllib.parse import quote
 
 
+def retry_delay(attempt, error=None):
+    """Respect numeric server guidance and spread temporary retries."""
+    try:
+        retry_after = max(0.0, float(error.headers.get('Retry-After', '0'))) if error else 0.0
+    except (AttributeError, TypeError, ValueError):
+        retry_after = 0.0
+    return max(retry_after, (15 if attempt == 0 else 45) + random.uniform(0, 5))
+
+
 def request_target(model, api_key=None):
+    route = os.environ.get('VOICEBOX_GEMINI_ROUTE', 'vertex').strip().lower()
+    if route not in ('vertex', 'api_key'):
+        raise RuntimeError('VOICEBOX_GEMINI_ROUTE must be vertex or api_key')
     project = os.environ.get('VOICEBOX_VERTEX_PROJECT', '').strip()
-    if project:
+    if route == 'vertex':
+        if not project:
+            raise RuntimeError('VOICEBOX_VERTEX_PROJECT is required for the vertex route')
         import google.auth
         from google.auth.transport.requests import Request
 
@@ -13,9 +28,11 @@ def request_target(model, api_key=None):
         credentials.refresh(Request())
         url = ('https://aiplatform.googleapis.com/v1/projects/' + quote(project, safe='') +
                '/locations/global/publishers/google/models/' + quote(model, safe='') + ':generateContent')
+        print(f'Gemini route=vertex project={project} location=global model={model}', flush=True)
         return url, {'Authorization': 'Bearer ' + credentials.token}
     key = api_key or os.environ.get('GEMINI_API_KEY')
     if not key:
-        raise RuntimeError('Configure VOICEBOX_VERTEX_PROJECT and Google credentials, or GEMINI_API_KEY')
+        raise RuntimeError('GEMINI_API_KEY is required for the explicitly selected api_key route')
+    print(f'Gemini route=api_key model={model}', flush=True)
     return ('https://generativelanguage.googleapis.com/v1beta/models/' +
             quote(model, safe='') + ':generateContent'), {'x-goog-api-key': key}

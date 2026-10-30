@@ -1,6 +1,7 @@
 """Transcribe VOICEVOX narration once and use its word times for subtitles."""
 from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
+from threading import BoundedSemaphore
 from urllib.error import HTTPError, URLError
 from urllib.request import Request, urlopen
 import base64
@@ -11,11 +12,12 @@ import subprocess
 import tempfile
 import time
 import wave
-from gemini_route import request_target
+from gemini_route import request_target, retry_delay
 
 MODEL = 'gemini-3.5-transcribe'
 MAX_CHUNK_SECONDS = 1500  # word timestamps support up to 30 minutes per request
 WORKERS = 5
+TRANSCRIBE_SLOTS = BoundedSemaphore(2)
 
 
 def _atomic_json(path, value):
@@ -37,8 +39,9 @@ def transcribe(audio_path, mime_type='audio/mpeg', *, api_key=None):
                       data=json.dumps(payload).encode(),
                       headers={'Content-Type': 'application/json', **headers})
     for attempt in range(3):
+        retry_error = None
         try:
-            with urlopen(request, timeout=240) as response:
+            with TRANSCRIBE_SLOTS, urlopen(request, timeout=240) as response:
                 result = json.load(response)
             words = [word for candidate in result.get('candidates', [])
                      for part in candidate.get('content', {}).get('parts', [])
@@ -50,11 +53,14 @@ def transcribe(audio_path, mime_type='audio/mpeg', *, api_key=None):
         except HTTPError as error:
             if error.code != 429 and not 500 <= error.code <= 599:
                 raise RuntimeError(f'Gemini HTTP {error.code}') from None
+            retry_error = error
             reason = f'HTTP {error.code}'
-        except (URLError, TimeoutError, OSError, json.JSONDecodeError) as error:
+        except (URLError, TimeoutError, OSError) as error:
             reason = type(error).__name__
         if attempt < 2:
-            time.sleep(attempt + 1)
+            delay = retry_delay(attempt, retry_error)
+            print(f'Gemini model={MODEL} attempt={attempt + 1} error={reason} retry_seconds={delay:.1f}', flush=True)
+            time.sleep(delay)
     raise RuntimeError(f'Gemini request failed after 3 attempts: {reason}')
 
 
