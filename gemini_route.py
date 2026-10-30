@@ -1,6 +1,16 @@
 """Select one explicit Gemini route; never silently fall back to an API key."""
 import os
+import random
 from urllib.parse import quote
+
+
+def retry_delay(attempt, error=None):
+    """Respect numeric server guidance and spread temporary retries."""
+    try:
+        retry_after = max(0.0, float(error.headers.get('Retry-After', '0'))) if error else 0.0
+    except (AttributeError, TypeError, ValueError):
+        retry_after = 0.0
+    return max(retry_after, (15 if attempt == 0 else 45) + random.uniform(0, 5))
 
 
 def request_target(model, api_key=None):

@@ -51,3 +51,12 @@ def test_no_implicit_api_key_fallback():
         url, headers = request_target('gemini-3.5-transcribe')
         assert 'generativelanguage.googleapis.com' in url
         assert headers['x-goog-api-key'] == 'fixture'
+
+
+def test_retry_delay_honors_server_and_increases(monkeypatch):
+    from gemini_route import retry_delay
+
+    monkeypatch.setattr('gemini_route.random.uniform', lambda *_: 0)
+    error = Mock(headers={'Retry-After': '60'})
+    assert retry_delay(0, error) == 60
+    assert retry_delay(1) == 45

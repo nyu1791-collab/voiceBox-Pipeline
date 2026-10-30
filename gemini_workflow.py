@@ -11,7 +11,7 @@ from urllib.request import Request, urlopen
 from urllib.error import HTTPError, URLError
 
 from research import public_url, source_id
-from gemini_route import request_target
+from gemini_route import request_target, retry_delay
 
 DEFAULT_MODEL = 'gemini-3.8-flash'
 
@@ -52,11 +52,15 @@ def call_gemini(model, parts, *, system, tools=(), schema=None):
                 raise RuntimeError(f'Gemini API failed (HTTP {error.code})') from None
             if attempt == 2:
                 raise RuntimeError(f'Gemini API failed (HTTP {error.code}, 3 attempts)') from None
-            time.sleep(attempt + 1)
-        except (URLError, TimeoutError, OSError, ValueError, KeyError, TypeError):
+            delay = retry_delay(attempt, error)
+            print(f'Gemini model={model} attempt={attempt + 1} error=HTTP_{error.code} retry_seconds={delay:.1f}', flush=True)
+            time.sleep(delay)
+        except (URLError, TimeoutError, OSError) as error:
             if attempt == 2:
                 raise RuntimeError('Gemini API failed after 3 attempts') from None
-            time.sleep(attempt + 1)
+            delay = retry_delay(attempt)
+            print(f'Gemini model={model} attempt={attempt + 1} error={type(error).__name__} retry_seconds={delay:.1f}', flush=True)
+            time.sleep(delay)
 
 
 SOURCE_SCHEMA = {
