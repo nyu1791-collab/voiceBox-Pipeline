@@ -1,0 +1,36 @@
+{
+  "schema": 1,
+  "name": "voiceBox-Pipeline",
+  "kind": "video",
+  "setup": [
+    [
+      "{bootstrap_python}",
+      "-m",
+      "venv",
+      "{repo}/.venv"
+    ],
+    [
+      "{python}",
+      "-m",
+      "pip",
+      "install",
+      "-r",
+      "requirements.txt"
+    ]
+  ],
+  "tools": [
+    "git",
+    "gh",
+    "ffmpeg",
+    "ffprobe"
+  ],
+  "credential_names": [
+    "VOICEBOX_VERTEX_PROJECT",
+    "GOOGLE_APPLICATION_CREDENTIALS"
+  ],
+  "native_entry": "python tools/prepare_project.py --help",
+  "package_mode": "long",
+  "production_execution": "explicit_native_command",
+  "shared_runtime": false,
+  "recommended_python": "3.12"
+}

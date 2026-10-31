@@ -1,3 +1,5 @@
+新しいWindows PCへの導入・素材移行・投稿用素材パックは [PC移行ガイド](workstation/README.md) を参照してください。既存の制作入口とモデルは維持します。
+
 # voiceBox Pipeline
 
 **GitHub ActionsにVOICEVOX CPU版を搭載し、10プロセス・各1スレッドで音声を作ります。** 音声生成にGPU・Colabは使いません。Geminiの利用条件・料金はAPIアカウントによります。MoviePy・CairoSVG・FFmpegを編集処理へ組み込みました。

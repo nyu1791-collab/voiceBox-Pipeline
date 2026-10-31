@@ -18,3 +18,10 @@ examples/project.json
 
 # Generated Google Actions credentials
 gha-creds-*.json
+
+# PC-local optional automation state
+.venv-research/
+workstation/local.json
+workstation/*.local.json
+
+.ruff_cache/
