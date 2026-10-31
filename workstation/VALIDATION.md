@@ -13,3 +13,12 @@
 GitHubの公開ページとGit checkoutで8つの外部候補の機能・LICENSEを確認した。GitHub APIホストはクラウドのネットワークで拒否され、Desktop Commanderのツールもこのセッションにはない。公開プロフィールで見えた9リポジトリを対象にし、非公開全件列挙は未確認。
 
 以前の公開保存庫移管の未コミット変更はgit stashと `/workspace/private/pre-pc-integration-2026-10-31` の控えに保持した。この作業で適用・削除・公開はしていない。
+
+## 2026-10-31 追加修正: 任意ブラウザ調査
+
+Antigravityへの意見照会の準備中に、こちらのソース照合で発見した問題を修正した。外部モデルからの回答に基づく変更ではない。固定browser-useのChatGoogleは `max_retries=0` を拒否し、既定Agentは追加judge・失敗後の最終応答・空応答への再要求を行い得た。
+
+- ClipForge・MoneyPrinterTurbo-Foundation・voiceBox-Pipelineの各workstationで13件ずつ、計39件成功。内訳は既存8件とブラウザの回帰5件。ブラウザ/APIを模擬し、追加要求を送信前に止めること、要求上限5回、API試行1回の設定、未知/JavaScript/書き込み/追加LLM抽出ツールの除外、初期化失敗時の終了、失敗したdoneを成功としないことを確認した。
+- 3リポジトリのworkstationのruffとgit diff --checkが成功。
+- 上流ソースの照合先はbrowser-use `b49a68e4060acb226da8f784194fef301c53a6d7` のagent/service.py、llm/google/chat.py、tools/service.py、tools/registry/service.py。Google SDKへHTTP retry_options.attempts=1を渡す。実Chromium/実APIでの確認ではない。
+- Antigravityの指定「4 アルゴン」の正確なモデルIDは未確認。このクラウドにAntigravity/Desktop Commanderの接続ツールはなく、Antigravity/Google APIの通信も現行ネットワークで制限されている。今回のAntigravityモデル要求0件、回答未取得。通常制作へ追加査読は組み込んでいない。
