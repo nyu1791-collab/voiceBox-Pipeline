@@ -419,7 +419,14 @@ def main():
         command = commands.add_parser(name, help="台本JSONと画像から動画を完成")
         command.add_argument("project", type=Path)
         command.add_argument("--out", type=Path, required=True)
+    short_parser = commands.add_parser("short", help="完成済みフォルダから縦型ショートを作る（音声再合成なし）")
+    import shorts
+    shorts.add_arguments(short_parser)
     args = parser.parse_args()
+    if args.command == "short":
+        with lock(ROOT / ".cache/run.lock"):
+            shorts.make_short(args)
+        return 0
     if args.command == "setup":
         setup(args)
     elif args.command == "run":

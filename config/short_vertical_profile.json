@@ -1,0 +1,53 @@
+{
+  "output": {
+    "width": 1080,
+    "height": 1920,
+    "fps": 24,
+    "preset": "veryfast",
+    "crf": 20
+  },
+  "segment": {
+    "min_seconds": 15,
+    "max_seconds": 59,
+    "hard_max_seconds": 180
+  },
+  "layout": {
+    "background": "#E9EEF5",
+    "header_background": "#F3F0E6",
+    "title_color": "#24364F",
+    "title_font_size": 56,
+    "title_min_font_size": 40,
+    "title_max_lines": 2,
+    "header": [0, 0, 1080, 200],
+    "evidence": [40, 220, 1040, 960],
+    "source_font_size": 26,
+    "source_url_font_size": 22,
+    "source_y": 975,
+    "source_url_y": 1012,
+    "voice_credit_y": 1046,
+    "translation_font_size": 30,
+    "caption": [40, 1090, 1040, 1470],
+    "caption_font_size": 64,
+    "caption_max_lines": 3,
+    "caption_line_height": 84,
+    "caption_speaker_font_size": 30,
+    "caption_upcoming_color": "#A9B2BE",
+    "caption_text_colors": {
+      "ずんだもん": "#2B6146",
+      "四国めたん": "#8A3A62"
+    },
+    "caption_backplates": {
+      "ずんだもん": "#EEF9F2",
+      "四国めたん": "#FDF2F7"
+    },
+    "caption_outline": {
+      "ずんだもん": "#B8E6C8",
+      "四国めたん": "#F2C4D7"
+    },
+    "character_bottom": 1910,
+    "character_side_margin": 30,
+    "character_active_height": 430,
+    "character_inactive_height": 395,
+    "inactive_opacity": 0.5
+  }
+}

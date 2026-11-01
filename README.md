@@ -62,6 +62,29 @@ materials/   # 指定画像・SVG・動画・任意BGM
 
 標準の最終動画は360p（640×360）・24fps、H.264 preset veryfast・CRF20、AAC 48kHz mono。1280×720のレイアウトで描画し、最終映像を360pへ縮小します。字幕は描画時にZen Maru Gothic Medium 36px・最大3行。声はVOICEVOX style3/2、原音話速1.10・後段1.15。認識した字幕本文を保持し、長文は時間方向に分けます。静止画だけの既存台本も同じ入口で動きます。
 
+## 縦型ショートを切り出す
+
+完成済みの `run --out` フォルダから、1080×1920・24fpsの縦型ショートを作ります。VOICEVOXは起動せず、本編の `narration.wav`・`timing.json`・`transcription.json` を再利用します。360pの本編を切り抜くのではなく、承認済み立ち絵・資料画像・字幕を縦型で描き直すため、話者を追うリフレームは不要です。
+
+```bash
+./zundamon-video short 出力/本編 --out 出力/本編-short1                # 59秒以内を自動選択（節の頭を優先）
+./zundamon-video short 出力/本編 --out 出力/本編-short2 --lines 12-20 --title "短いタイトル"
+```
+
+- **カラオケ字幕**：BudouXの文節ごとに、話した部分が話者色、これからの部分が灰色に変わります。時刻はGeminiの単語時刻から求めた発話の進み具合で、無い台詞は文字数比で配分します（`short.json` の `karaoke.basis` に記録）。音素単位の同期ではありません。
+- **出力**：`short.mp4`（映像は1回だけ符号化、音声は本編と同じgain・limiterで結合）、編集用 `short.karaoke.ass`（`\kf`）、アップロード用 `short.srt`/`short.vtt`、`description.txt`（本編のクレジット＋`#Shorts`）、`short.json`。
+- 区間内の効果音は本編の `sound-effects.json` から移します。BGMは `--bgm 曲.wav --bgm-credit "曲名 / 作者 / ライセンス"` で指定します。
+- `short.json` の `human_review.done` は常に `false` です。量産コンテンツ対策として、公開前に人が見て切り出し位置と字幕を確かめてください（待ち工程ではありません）。
+
+### YouTubeへ字幕を追加
+
+```bash
+python tools/youtube_captions.py VIDEO_ID 出力/本編-short1/short.srt            # 内容確認だけ（送信しない）
+python tools/youtube_captions.py VIDEO_ID 出力/本編-short1/short.srt --confirm  # 送信（captions.insert：1回400ユニット）
+```
+
+OAuthは `YOUTUBE_CLIENT_ID`・`YOUTUBE_CLIENT_SECRET`・`YOUTUBE_REFRESH_TOKEN`（スコープ `youtube.force-ssl`）を環境変数で渡します。既定の1日の上限10,000ユニットでは、1日25回までです。
+
 ## Google Driveへリポジトリを同期
 
 GitHub Actionsから追跡対象ファイルのスナップショットをGoogle Driveへ送れます。初回設定と実行方法は[Google Drive同期手順](docs/GOOGLE_DRIVE_SYNC.md)を参照してください。
