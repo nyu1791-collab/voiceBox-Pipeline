@@ -29,6 +29,7 @@ jobs:
       - name: Let Gemini choose today's topic
         env:
           GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
+          VOICEBOX_GEMINI_ROUTE: api_key   # 既定の vertex は、この実行では設定していないため使わない
         run: |
           mkdir -p "$RUNNER_TEMP/jobs"
           python tools/auto_topic.py --jobs "$RUNNER_TEMP/jobs"
