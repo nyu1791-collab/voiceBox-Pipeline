@@ -25,7 +25,7 @@ def youtube_video(url):
         bool(parse_qs(parts.query).get('v')) or parts.path.startswith(('/shorts/', '/live/')))
 
 
-def call_gemini(model, parts, *, system, tools=(), schema=None):
+def call_gemini(model, parts, *, system, tools=(), schema=None, timeout=600):
     url, headers = request_target(model)
     config = {'thinkingConfig': {'thinkingLevel': 'MEDIUM'}, 'maxOutputTokens': 32768}
     if schema:
@@ -39,8 +39,7 @@ def call_gemini(model, parts, *, system, tools=(), schema=None):
                       headers={**headers, 'Content-Type': 'application/json'})
     for attempt in range(3):
         try:
-            # 台本は長い生成になるため、240秒では途中で切れていた（2026-11-03）。待ち時間を広げる。
-            with urlopen(request, timeout=600) as response:
+            with urlopen(request, timeout=timeout) as response:
                 result = json.load(response)
             candidate = (result.get('candidates') or [{}])[0]
             text = ''.join(part.get('text', '') for part in candidate.get('content', {}).get('parts', [])
@@ -196,5 +195,6 @@ def create_dialogue(prompt, sources, output, model=DEFAULT_MODEL, related_images
         for req in ('visual_id', 'topic', 'motion'):
             if req not in line_schema['required']:
                 line_schema['required'].append(req)
-    script, candidate = call_gemini(model, parts, system=prompt['system'], tools=tools, schema=schema)
+    # 台本生成には時間上限を設けない（利用者の指示 2026-11-03）。接続が切れた場合だけ、既存の再試行の対象になる。
+    script, candidate = call_gemini(model, parts, system=prompt['system'], tools=tools, schema=schema, timeout=None)
     return script, {'youtube_inputs': videos, 'url_context': candidate.get('urlContextMetadata', {})}
