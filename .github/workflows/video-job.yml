@@ -1,0 +1,47 @@
+name: video-job
+
+# content-engine が承認したテーマを受け取り、制作の入口を作る。
+# ここでは費用の出る処理（Geminiの調査・台本）と音声・描画（Colab GPU）は行わない。
+# 次の段階で、非公開の保管先を決めてから追加する（docs/VIDEO_JOB_ROUTE.md）。
+on:
+  workflow_dispatch:
+    inputs:
+      job_id:
+        description: '承認された動画テーマのID（12桁の16進）'
+        required: true
+        type: string
+      topic:
+        description: 'テーマ'
+        required: true
+        type: string
+      urls:
+        description: '参考にする公開URL（https、1行1件・任意）'
+        required: false
+        default: ''
+        type: string
+permissions:
+  contents: read
+jobs:
+  plan:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+      - name: Write the approved job
+        env:
+          JOB_ID: ${{ inputs.job_id }}
+          TOPIC: ${{ inputs.topic }}
+          URLS: ${{ inputs.urls }}
+        run: |
+          python - <<'EOF'
+          import json, os
+          job = {"id": os.environ["JOB_ID"], "status": "approved", "topic": os.environ["TOPIC"],
+                 "urls": [u.strip() for u in os.environ["URLS"].splitlines() if u.strip()],
+                 "created": "", "approved_at": ""}
+          with open(os.path.join(os.environ["RUNNER_TEMP"], "job.json"), "w", encoding="utf-8") as f:
+              json.dump(job, f, ensure_ascii=False, indent=2)
+          EOF
+      - name: Make the research request (no paid call)
+        run: |
+          python tools/video_job.py plan --job "$RUNNER_TEMP/job.json" --out "$RUNNER_TEMP/run"
+          cat "$RUNNER_TEMP/run/request.json"
