@@ -1,7 +1,6 @@
 """Remotion/PowerPointの無音図解を、実音声に結び付けて既存描画へ渡す。"""
 from pathlib import Path
 import argparse
-import fcntl
 import copy
 import hashlib
 import json
@@ -12,7 +11,7 @@ import subprocess
 import sys
 import platform
 from fractions import Fraction
-from pipeline_common import atomic_json, sha256
+from pipeline_common import atomic_json, exclusive_lock, sha256
 
 BACKENDS = ('pillow', 'remotion', 'powerpoint')
 HERE = Path(__file__).resolve().parent
@@ -139,8 +138,7 @@ def probe_clip(clip, req):
 
 
 def import_clip(version, profile, request_path, clip, provenance_path):
-    with (version/'inputs/.motion-assets.lock').open('a') as lock:
-        fcntl.flock(lock, fcntl.LOCK_EX)
+    with exclusive_lock(version/'inputs/.motion-assets.lock'):
         return _import_clip(version, profile, request_path, clip, provenance_path)
 
 

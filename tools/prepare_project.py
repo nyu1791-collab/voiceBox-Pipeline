@@ -13,6 +13,7 @@ from pipeline import atomic_json, load_project
 from research import research, script_prompt, generate_script, normalize_script
 from renderer.material_capture import capture_targets
 from image_search import collect_related_images
+from quality_gates import image_allowed, numeric_checks
 
 
 def neutral_visual(output):
@@ -251,13 +252,34 @@ def prepare_gemini(request, output, started, *, executable_path=None):
     if related and not any(line['visual'] in image_ids for line in project['lines']):
         project['lines'][0]['visual'] = related[0]['id']
         project['lines'][0]['visual_context_only'] = True
-    project['visuals'] = visuals + related
+    # Rights and grounding checks: rejected images never reach the video, and findings are kept for review.
+    rights_excluded, shown = [], []
+    for visual in visuals + related:
+        allowed, reason = image_allowed(visual)
+        if allowed:
+            shown.append(visual)
+        else:
+            rights_excluded.append({'id': visual['id'], 'capture_kind': visual.get('capture_kind'),
+                                    'source_url': visual.get('source_url'), 'reason': reason})
+    if not shown:
+        shown.append(neutral_visual(output))
+    shown_ids = {visual['id'] for visual in shown}
+    for line in project['lines']:
+        if line.get('visual') not in shown_ids:
+            line['visual'] = shown[0]['id']
+            line['visual_context_only'] = True
+    unsupported_numbers, conflicting_counts = numeric_checks(project['lines'], pack['sources'])
+    project['visuals'] = shown
     project['source_references'] = source_references(pack['sources'])
     project.setdefault('audio', {'normalize': True})
     atomic_json(output / 'project.json', project)
     result = {'status': 'PROJECT_READY', 'sources': len(pack['sources']),
               'screenshots': len({v['file'] for v in visuals if v.get('capture_kind') != 'neutral_background'}),
               'capture_failures': failures,
+              'quality_checks': {'rights_excluded': rights_excluded,
+                                 'unsupported_numbers': unsupported_numbers,
+                                 'conflicting_counts': conflicting_counts,
+                                 'needs_check': bool(rights_excluded or unsupported_numbers or conflicting_counts)},
               'related_images': len(related), 'image_errors': image_results['errors'],
               'youtube_playback_blocked': sum(bool(c.get('playback_blocked')) for c in captures),
               'lines': len(project['lines']), 'provider': 'gemini', 'model': model,

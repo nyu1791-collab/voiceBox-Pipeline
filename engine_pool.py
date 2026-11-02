@@ -23,10 +23,23 @@ def engine_fingerprint_cache(directory):
     return cache_home / 'voicebox-tools' / 'engine-fingerprints' / (identity + '.json')
 
 
+def engine_executable(directory):
+    return Path(directory) / ("run.exe" if os.name == "nt" else "run")
+
+
+def stop_engine(process, force=False):
+    if os.name == "nt":
+        process.kill() if force else process.terminate()
+    else:
+        os.killpg(process.pid, signal.SIGKILL if force else signal.SIGTERM)
+
+
 def engine_fingerprint(directory, cache=None):
     directory = Path(directory)
-    paths = [directory / "run", directory / "libvoicevox_core.so",
-             directory / "libvoicevox_onnxruntime.so", directory / "engine_manifest.json"]
+    libraries = (["voicevox_core.dll", "voicevox_onnxruntime.dll"] if os.name == "nt"
+                 else ["libvoicevox_core.so", "libvoicevox_onnxruntime.so"])
+    paths = [engine_executable(directory)] + [directory / name for name in libraries]
+    paths += [directory / "engine_manifest.json"]
     paths += sorted((directory / "model").rglob("*"))
     paths = [path for path in paths if path.is_file()]
     signature = []
@@ -134,7 +147,7 @@ class EnginePool:
                            MKL_NUM_THREADS="1", VV_CPU_NUM_THREADS="1")
         try:
             for worker in range(WORKERS):
-                command = [str(self.directory / "run"), "--host", "127.0.0.1",
+                command = [str(engine_executable(self.directory)), "--host", "127.0.0.1",
                            "--port", str(self.base_port + worker),
                            "--voicevox_dir", str(self.directory),
                            "--cpu_num_threads", "1", "--disable_mutable_api", "--output_log_utf8"]
@@ -182,8 +195,8 @@ class EnginePool:
         for process in self.processes:
             if process.poll() is None:
                 try:
-                    os.killpg(process.pid, signal.SIGTERM)
-                except ProcessLookupError:
+                    stop_engine(process)
+                except (ProcessLookupError, OSError):
                     pass
         deadline = time.monotonic() + 10
         for process in self.processes:
@@ -191,7 +204,7 @@ class EnginePool:
                 try:
                     process.wait(timeout=max(0.1, deadline - time.monotonic()))
                 except subprocess.TimeoutExpired:
-                    os.killpg(process.pid, signal.SIGKILL)
+                    stop_engine(process, force=True)
                     process.wait(timeout=5)
         for handle in self.handles:
             handle.close()

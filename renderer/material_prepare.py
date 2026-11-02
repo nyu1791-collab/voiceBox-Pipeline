@@ -1,7 +1,6 @@
 """Task-local material preparation with immutable plans and resumable outputs."""
 import argparse
 import asyncio
-import fcntl
 import json
 from pathlib import Path
 import re
@@ -9,7 +8,7 @@ import uuid
 from urllib.parse import urlparse
 
 from artifact_receipts import file_hashes
-from pipeline_common import atomic_json, sha256, utcnow
+from pipeline_common import atomic_json, exclusive_lock, sha256, utcnow
 from production_policy import batch_mode
 from story_contract import norm, original_quote
 
@@ -194,8 +193,7 @@ def verify(task):
 
 def prepare(task, capture=None):
     task = Path(task).resolve(); (task/'capture').mkdir(exist_ok=True)
-    with (task/'capture/.prepare-materials.lock').open('a') as lock:
-        fcntl.flock(lock, fcntl.LOCK_EX)
+    with exclusive_lock(task/'capture/.prepare-materials.lock'):
         try:
             receipt = current_receipt(task)
             if receipt is not None:

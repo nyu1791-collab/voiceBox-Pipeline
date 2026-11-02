@@ -5,7 +5,7 @@ from contextlib import contextmanager
 from pathlib import Path
 from urllib.parse import urlsplit
 import argparse
-import fcntl
+import errno
 import hashlib
 import io
 import json
@@ -19,14 +19,27 @@ import time
 import uuid
 import wave
 
-from engine_pool import EnginePool, WORKERS, engine_fingerprint, engine_fingerprint_cache
+from engine_pool import EnginePool, WORKERS, engine_executable, engine_fingerprint, engine_fingerprint_cache
 from media_editing import prepare_visual, mux_audio, sound_effects, make_thumbnail
 from subtitle_tools import write_subtitles
 
 ROOT = Path(__file__).resolve().parent
 SPEAKERS = {"ずんだもん": 3, "四国めたん": 2}
 EMOTIONS = {"NORMAL", "HAPPY", "SERIOUS", "SURPRISED", "TROUBLED", "SKEPTICAL"}
-SPEED, ATEMPO = 1.10, 1.15
+SPEED, ATEMPO = 1.10, 1.0  # total playback speed is 1.1x: no second tempo stage
+# Part of the audio cache key, in place of whole-file code hashes. Bump it when the
+# same specification in cache_entry() would now produce a different WAV or query:
+#   - EnginePool.synthesize: the audio_query -> speedScale -> synthesis requests and
+#     any query field it sets (engine_pool.py)
+#   - EnginePool.__enter__: engine launch arguments and thread environment that can
+#     change the voice (engine_pool.py)
+#   - prepare_audio: the ffmpeg post-processing of raw.wav into voice.wav, or the set
+#     of files a cache directory holds
+# Do not bump it for rendering, subtitles, locks, logging or reports. No bump is needed
+# for text, speaker, engine SHA, SPEED, ATEMPO, sample rate or device: each is already
+# its own key field. A forgotten bump silently reuses old audio; a bump resynthesizes
+# every line once. The ffmpeg binary's own version is not part of the key.
+SYNTH_REVISION = "voicevox-synth-v1"
 
 
 def sha256(path):
@@ -65,13 +78,36 @@ def run_command(command, *, env=None, log=None):
 
 @contextmanager
 def lock(path):
+    """Fail at once with BUSY. Non-blocking form of renderer/pipeline_common.py exclusive_lock,
+    duplicated like atomic_json because renderer/ is not on this module's path. Windows locks are
+    mandatory, so path must be a dedicated lock file, never a file holding data."""
+    path = Path(path)
     path.parent.mkdir(parents=True, exist_ok=True)
-    with path.open("a+") as handle:
-        try:
-            fcntl.flock(handle, fcntl.LOCK_EX | fcntl.LOCK_NB)
-        except BlockingIOError:
-            raise RuntimeError(f"BUSY: {path}") from None
-        yield
+    with path.open("a+b") as handle:
+        if os.name == "nt":
+            import msvcrt
+            if os.fstat(handle.fileno()).st_size == 0:
+                handle.write(b"0")
+                handle.flush()
+            try:
+                handle.seek(0)
+                msvcrt.locking(handle.fileno(), msvcrt.LK_NBLCK, 1)
+            except OSError as exc:
+                if exc.errno not in (errno.EACCES, errno.EDEADLK):
+                    raise
+                raise RuntimeError(f"BUSY: {path}") from None
+            try:
+                yield
+            finally:
+                handle.seek(0)
+                msvcrt.locking(handle.fileno(), msvcrt.LK_UNLCK, 1)
+        else:
+            import fcntl
+            try:
+                fcntl.flock(handle, fcntl.LOCK_EX | fcntl.LOCK_NB)
+            except BlockingIOError:
+                raise RuntimeError(f"BUSY: {path}") from None
+            yield
 
 
 @contextmanager
@@ -99,8 +135,8 @@ def setup(args):
         values[key] = str(Path(value).expanduser().resolve())
         if not Path(values[key]).exists():
             raise FileNotFoundError(f"{key}: {values[key]}; specify --{key.replace('_', '-')}")
-    if not (Path(values["engine_dir"]) / "run").is_file():
-        raise FileNotFoundError("Specify the directory containing the VOICEVOX CPU executable 'run'")
+    if not engine_executable(values["engine_dir"]).is_file():
+        raise FileNotFoundError("Specify the directory containing the VOICEVOX CPU executable 'run' (or 'run.exe' on Windows)")
     for character in ("Zundamon", "Metan"):
         if not (Path(values["shell"]) / character).is_dir():
             raise FileNotFoundError(f"Missing native parts: {character}")
@@ -183,10 +219,10 @@ def wav_info(path):
         return frames, rate
 
 
-def cache_entry(row, engine_sha, code_sha):
+def cache_entry(row, engine_sha):
     specification = {"text": row.get("speech_text", row["text"]),
         "speaker_id": SPEAKERS[row["speaker"]], "engine_sha256": engine_sha,
-        "synth_code_sha256": code_sha, "speedScale": SPEED, "atempo": ATEMPO,
+        "synth_revision": SYNTH_REVISION, "speedScale": SPEED, "atempo": ATEMPO,
         "sample_rate": 48000, "device": "cpu"}
     directory = ROOT / ".cache/audio" / json_digest(specification)
     receipt = directory / "receipt.json"
@@ -202,8 +238,7 @@ def cache_entry(row, engine_sha, code_sha):
 
 def prepare_audio(project, runtime, out, engine_sha):
     started = time.monotonic()
-    code_sha = json_digest([sha256(ROOT / "pipeline.py"), sha256(ROOT / "engine_pool.py")])
-    entries = [cache_entry(row, engine_sha, code_sha) for row in project["lines"]]
+    entries = [cache_entry(row, engine_sha) for row in project["lines"]]
     # Deduplicate identical narration before assigning independent work to engines.
     unique = {}
     for row, (directory, specification, valid) in zip(project["lines"], entries):

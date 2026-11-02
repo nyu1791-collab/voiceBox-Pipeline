@@ -110,7 +110,7 @@ class GeminiFlowTest(unittest.TestCase):
             outdir.mkdir(parents=True, exist_ok=True)
             Image.new('RGB', (100, 70), 'blue').save(outdir/'image.png')
             return {'query': topic, 'images': [{'id': 'img-reference',
-                    'file': 'materials/related/image.png', 'source_url': 'https://example.com/photo',
+                    'file': 'materials/related/image.png', 'source_url': 'https://www.city.example.lg.jp/photo',
                     'source_credit': '関連画像の出典', 'capture_kind': 'related_image'}], 'errors': []}
 
         with tempfile.TemporaryDirectory() as directory, \
@@ -129,7 +129,7 @@ class GeminiFlowTest(unittest.TestCase):
         self.assertEqual(result['related_images'], 1)
         self.assertEqual(project['lines'][0]['visual'], 'img-reference')
         visual = next(item for item in project['visuals'] if item['id'] == 'img-reference')
-        self.assertEqual(visual['source_url'], 'https://example.com/photo')
+        self.assertEqual(visual['source_url'], 'https://www.city.example.lg.jp/photo')
         self.assertEqual(len(result['capture_failures']), 1)
         self.assertTrue(reused['reused'])
         self.assertEqual(len(requests), 2)

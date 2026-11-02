@@ -121,7 +121,11 @@ def script_prompt(pack, minutes=10):
         '"emotion":"NORMAL","text":"台詞","source_id":"資料ID","se":null}]}。'
         'speakerはずんだもん/四国めたん。emotionはNORMAL/HAPPY/SERIOUS/SURPRISED/TROUBLED/SKEPTICAL。'
         '資料に対応する台詞には資料IDを指定する。SEはnull。両者の会話で説明し、同じ説明や無音で水増ししない。'
-        '分数と文字数はおおよその目安であり、厳密に合わせる必要はない。',
+        '分数と文字数はおおよその目安であり、厳密に合わせる必要はない。'
+        '目標: 冒頭の最初の一言で「何の話で、なぜ最後まで見る価値があるか」を伝える。'
+        '途中で「ここまで見ると分かること」を予告し、話題が変わる所では短い問いで次へつなぐ。'
+        '一台詞は短く区切り、数字は資料の表記のまま書く（4分の3を4/3と書かない）。'
+        '最後は要点を3つにまとめ、次に見たくなる一言で締める。',
         'user': json.dumps({'topic': pack['topic'], 'target_minutes': minutes,
                  'target_japanese_characters': round(minutes * 420), 'sources': sources}, ensure_ascii=False)}
 

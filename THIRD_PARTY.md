@@ -13,6 +13,18 @@
 
 - [MoviePy](https://github.com/Zulko/moviepy)：2.2.1、MIT。動画の切り抜き・クロップ・クロスフェード・動画資料のフレーム取得。
 - [CairoSVG](https://github.com/Kozea/CairoSVG)：2.9.1、LGPL-3.0。提供SVGを高解像度PNGへ変換。
+- [MoneyPrinterTurbo](https://github.com/harry0703/MoneyPrinterTurbo)：フォーク MoneyPrinterTurbo-Foundation のコミット 90f7701、MIT。`app/services/video_project.py` のOS所有ロックと処理版番号＋入力によるキャッシュ鍵の考え方を参考に、`exclusive_lock`・`lock`・`SYNTH_REVISION` を書き直した。依存としては追加しない。許諾表示は以下のとおり。
+
+  > MIT License
+  >
+  > Copyright (c) 2024 Harry
+  >
+  > Permission is hereby granted, free of charge, to any person obtaining a copy of this software and associated documentation files (the "Software"), to deal in the Software without restriction, including without limitation the rights to use, copy, modify, merge, publish, distribute, sublicense, and/or sell copies of the Software, and to permit persons to whom the Software is furnished to do so, subject to the following conditions:
+  >
+  > The above copyright notice and this permission notice shall be included in all copies or substantial portions of the Software.
+  >
+  > THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
+
 - [Remotion](https://github.com/remotion-dev/remotion)も調査したが、利用条件が異なるため今回の標準依存には追加しない。
 - Actionsのdemoは一時領域で組み立てた短い音声・動く図形・テスト用合成音による機能実行。正規立ち絵を使うproductionと区別する。
 - [DDGS](https://github.com/deedy5/ddgs)：9.16.0、MIT。記事と関連画像の検索に使用し、画像は出典ページのURLと一緒に保存する。提供先の接続制限に従う。

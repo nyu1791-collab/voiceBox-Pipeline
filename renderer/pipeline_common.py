@@ -2,7 +2,7 @@
 from contextlib import contextmanager
 from datetime import datetime, timezone
 from pathlib import Path
-import fcntl
+import errno
 import hashlib
 import json
 import os
@@ -41,22 +41,62 @@ def atomic_json(path, value):
             f.flush()
             os.fsync(f.fileno())
         os.replace(name, path)
-        fd = os.open(path.parent, os.O_RDONLY | os.O_DIRECTORY)
-        try:
-            os.fsync(fd)
-        finally:
-            os.close(fd)
+        if hasattr(os, "O_DIRECTORY"):
+            fd = os.open(path.parent, os.O_RDONLY | os.O_DIRECTORY)
+            try:
+                os.fsync(fd)
+            finally:
+                os.close(fd)
     finally:
         if os.path.exists(name):
             os.unlink(name)
+
+
+@contextmanager
+def exclusive_lock(path, blocking=True):
+    """OSが解放する排他lock。既定は無期限に待ち、blocking=Falseなら即座にBUSYで止める。
+
+    Windowsのロックは強制で読取りも妨げるため、pathはデータと別のlock専用ファイルにする。
+    """
+    path = Path(path)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    with path.open("a+b") as handle:
+        if os.name == "nt":
+            import msvcrt
+            if os.fstat(handle.fileno()).st_size == 0:
+                handle.write(b"0")
+                handle.flush()
+            # LK_LOCKは約10秒で諦めるため、LK_NBLCKを自前で繰り返して無期限に待つ。
+            while True:
+                try:
+                    handle.seek(0)
+                    msvcrt.locking(handle.fileno(), msvcrt.LK_NBLCK, 1)
+                    break
+                except OSError as exc:
+                    if exc.errno not in (errno.EACCES, errno.EDEADLK):
+                        raise
+                    if not blocking:
+                        raise RuntimeError(f"BUSY: {path}") from None
+                    time.sleep(0.05)
+            try:
+                yield
+            finally:
+                handle.seek(0)
+                msvcrt.locking(handle.fileno(), msvcrt.LK_UNLCK, 1)
+        else:
+            import fcntl
+            try:
+                fcntl.flock(handle, fcntl.LOCK_EX | (0 if blocking else fcntl.LOCK_NB))
+            except BlockingIOError:
+                raise RuntimeError(f"BUSY: {path}") from None
+            yield
 
 
 def update_json(path, change):
     """置換されるJSONとは別の固定lockを、読取りから保存まで保持する。"""
     path = Path(path)
     path.parent.mkdir(parents=True, exist_ok=True)
-    with path.with_name(path.name + ".lock").open("a") as lock:
-        fcntl.flock(lock, fcntl.LOCK_EX)
+    with exclusive_lock(path.with_name(path.name + ".lock")):
         value = json.loads(path.read_text(encoding="utf-8")) if path.exists() else {}
         if not isinstance(value, dict):
             raise ValueError("状態JSONはオブジェクトが必要")
