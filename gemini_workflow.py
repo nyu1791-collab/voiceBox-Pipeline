@@ -39,7 +39,8 @@ def call_gemini(model, parts, *, system, tools=(), schema=None):
                       headers={**headers, 'Content-Type': 'application/json'})
     for attempt in range(3):
         try:
-            with urlopen(request, timeout=240) as response:
+            # 台本は長い生成になるため、240秒では途中で切れていた（2026-11-03）。待ち時間を広げる。
+            with urlopen(request, timeout=600) as response:
                 result = json.load(response)
             candidate = (result.get('candidates') or [{}])[0]
             text = ''.join(part.get('text', '') for part in candidate.get('content', {}).get('parts', [])
