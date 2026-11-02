@@ -81,6 +81,8 @@ def main():
     topic, urls = pick_topic()
     path = write_job(args.jobs, topic, urls)
     print(f'話題を選びました: {topic}')
+    for url in urls:
+        print(f'根拠URL: {url}')  # 品質確認のため、実行ログに根拠を残す（公開情報のみ）
     print(f'ジョブを作りました: {path}')
     return 0
 
