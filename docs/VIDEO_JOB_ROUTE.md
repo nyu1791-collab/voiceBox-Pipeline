@@ -13,7 +13,8 @@
 
 ## RSSの新着から話題を選ぶ（feed-watch.yml、2026-11-03）
 
-- `.github/workflows/feed-watch.yml` が毎時23分に `config/feeds.json` のRSS・RSSHub経路を見る（`tools/feed_watch.py`）。既読の記録はActionsのキャッシュ `feed-state-*`。初回は今ある記事を既読にするだけ。
+- `.github/workflows/feed-watch.yml` が毎時23分に `config/feeds.json` のRSS・RSSHub経路・Xの公開プロフィールを見る（`tools/feed_watch.py`）。既読の記録はActionsのキャッシュ `feed-state-*`。初回は今ある記事を既読にするだけ。
+- X はログインせずに `https://x.com/<アカウント>` を読み、FreshRSS X Profiles 拡張（MIT、ワークフローの `X_PARSER_COMMIT` で固定）の解析で最新の投稿（約5件）を取り出す。このPCの `tools/x-public-profile.ps1` と同じ解析。Xの表示が変わると取れなくなることがあり、その時は「取得できなかった情報源」としてログに出て、ほかの情報源は続く。
 - 新着があれば、Gemini（`auto_topic.py --candidates`）が新着を読み、動画にする価値がある話題を1つ選ぶ。無ければ選ばない。一覧の記事URLに加えて別の根拠を検索で探し、検索の転送用リンクは実際の出典URLに直す。1日の作成数は変数 `FEED_DAILY_MAX`（既定3）まで。
 - その後は video-auto.yml と同じく `video_job.py plan` まで（費用なし）。手順4以降の接続は video-auto と同じ未接続の状態。
 - 定期実行はリポジトリ変数 `FEED_WATCH_ENABLED` を `true` にした時だけ動く。video-auto と同じ並び（concurrency）なので同時には選ばない。

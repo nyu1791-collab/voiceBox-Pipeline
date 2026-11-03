@@ -67,6 +67,28 @@ class FeedWatchTests(unittest.TestCase):
         self.assertIn('hub', errors)
 
 
+class XFeedTests(unittest.TestCase):
+    def test_x_posts_come_from_the_parser_rss(self):
+        import sys
+        fake_php = [sys.executable, '-c', 'import sys; sys.stdout.buffer.write(%r)' % RSS]
+        items = feed_watch.read_x({'id': 'x-a', 'user': '@OpenAI'}, 5, '/parser', php=fake_php,
+                                  get=lambda url: b'<html>page</html>')
+        self.assertEqual([it['feed'] for it in items], ['x-a', 'x-a'])
+        self.assertEqual(items[0]['url'], 'https://example.com/1')
+
+    def test_x_page_without_posts_is_an_error(self):
+        import sys
+        fail = [sys.executable, '-c', 'import sys; sys.stderr.write("no timeline found"); sys.exit(1)']
+        with self.assertRaises(RuntimeError):
+            feed_watch.read_x({'id': 'x-a', 'user': 'OpenAI'}, 5, '/parser', php=fail, get=lambda url: b'')
+
+    def test_x_user_names_and_parser_are_checked_first(self):
+        with self.assertRaises(ValueError):
+            feed_watch.read_x({'id': 'x', 'user': '../etc'}, 5, '/parser', get=lambda url: b'')
+        with self.assertRaises(RuntimeError):
+            feed_watch.read_x({'id': 'x', 'user': 'OpenAI'}, 5, None, get=lambda url: b'')
+
+
 class FeedTopicTests(unittest.TestCase):
     ITEMS = [{'feed': 'f', 'title': '新モデル発表', 'url': 'https://example.com/1', 'summary': '概要'}]
 

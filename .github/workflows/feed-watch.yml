@@ -1,6 +1,7 @@
 name: feed-watch
 
-# 1時間ごとに config/feeds.json のRSS・RSSHub経路を見て、新着をGeminiに読ませ、動画にする話題があれば制作ジョブを作る。
+# 1時間ごとに config/feeds.json のRSS・RSSHub経路・Xの公開プロフィールを見て、新着をGeminiに読ませ、動画にする話題があれば制作ジョブを作る。
+# X はログインせずに読み、FreshRSS X Profiles 拡張（MIT、下の X_PARSER_COMMIT で固定）の解析を使う。
 # 定期実行は、リポジトリ変数 FEED_WATCH_ENABLED が true のときだけ動く（既定は止まっている）。手動実行はいつでも動く。
 # 既読の記録は Actions のキャッシュ（feed-state-*）に保存する。1日に作るジョブは FEED_DAILY_MAX（既定3）まで。
 # ジョブの後の工程は video-auto.yml と同じ（調査依頼まで。音声と書き出しは Colab GPU の段階で追加する。docs/VIDEO_JOB_ROUTE.md）。
@@ -15,6 +16,7 @@ concurrency:
   cancel-in-progress: false
 env:
   RSSHUB_VERSION: 1.0.0-master.6a75df8
+  X_PARSER_COMMIT: b7cf9a0d0af233fb88cd2f3f99df8f8b6ee6b312   # shcheglovnd/FreshRSS-xExtension-XProfiles 0.1.4
 jobs:
   watch:
     if: ${{ github.event_name == 'workflow_dispatch' || vars.FEED_WATCH_ENABLED == 'true' }}
@@ -50,10 +52,18 @@ jobs:
             echo '{"private":true,"type":"module"}' > package.json
             npm install --no-audit --no-fund --save-exact "rsshub@$RSSHUB_VERSION"
           fi
+      - name: Get the X profile parser (only when config/feeds.json uses X)
+        run: |
+          if grep -q '"type": "x"' config/feeds.json; then
+            git clone --quiet --filter=blob:none https://github.com/shcheglovnd/FreshRSS-xExtension-XProfiles.git "$RUNNER_TEMP/x-parser"
+            git -C "$RUNNER_TEMP/x-parser" checkout --quiet "$X_PARSER_COMMIT"
+            php -r 'exit(function_exists("mb_substr") ? 0 : 1);'
+          fi
       - name: Check the feeds
         id: feeds
         env:
           RSSHUB_DIR: ${{ runner.temp }}/rsshub
+          X_PARSER_DIR: ${{ runner.temp }}/x-parser
         run: python tools/feed_watch.py --state feed-state.json --out "$RUNNER_TEMP/new-items.json"
       - name: Let Gemini read the new items and choose a topic
         if: steps.feeds.outputs.new_count != '0'
