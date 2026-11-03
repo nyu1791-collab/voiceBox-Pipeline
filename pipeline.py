@@ -19,7 +19,7 @@ import time
 import uuid
 import wave
 
-from engine_pool import EnginePool, WORKERS, engine_executable, engine_fingerprint, engine_fingerprint_cache
+from engine_pool import EnginePool, WORKERS, GPU_MODE, engine_executable, engine_fingerprint, engine_fingerprint_cache
 from media_editing import prepare_visual, mux_audio, sound_effects, make_thumbnail
 from subtitle_tools import write_subtitles
 
@@ -223,7 +223,7 @@ def cache_entry(row, engine_sha):
     specification = {"text": row.get("speech_text", row["text"]),
         "speaker_id": SPEAKERS[row["speaker"]], "engine_sha256": engine_sha,
         "synth_revision": SYNTH_REVISION, "speedScale": SPEED, "atempo": ATEMPO,
-        "sample_rate": 48000, "device": "cpu"}
+        "sample_rate": 48000, "device": "cuda" if GPU_MODE else "cpu"}
     directory = ROOT / ".cache/audio" / json_digest(specification)
     receipt = directory / "receipt.json"
     valid = False
@@ -245,11 +245,12 @@ def prepare_audio(project, runtime, out, engine_sha):
         if not valid:
             unique.setdefault(str(directory), (row, directory, specification))
     pending = list(unique.values())
-    report = {"device": "cpu", "gpu_used": False, "workers": WORKERS,
+    # GPU版エンジンを --use_gpu で起動した場合だけ True（以前は常に False のため、GPU使用が記録されなかった）
+    report = {"device": "cuda" if GPU_MODE else "cpu", "gpu_used": GPU_MODE, "workers": WORKERS,
               "engine_sha256": engine_sha,
               "reused_lines": sum(valid for _, _, valid in entries), "new_unique_lines": len(pending)}
     if pending:
-        print(f"CPU VOICEVOX: 10 engines / {len(pending)} new unique lines", flush=True)
+        print(f"VOICEVOX: {WORKERS} engines / {len(pending)} new unique lines", flush=True)
         pool = EnginePool(runtime["engine_dir"], out / "engine-logs")
         try:
             with pool:
@@ -292,17 +293,22 @@ def prepare_audio(project, runtime, out, engine_sha):
                 raise ValueError("Cache audio sample rate differs")
             with wave.open(str(directory / "voice.wav"), "rb") as source:
                 narration.writeframes(source.readframes(frames))
-            records.append({"id": row["id"], "speaker": row["speaker"],
+            record = {"id": row["id"], "speaker": row["speaker"],
                 "voicevox_speaker_id": SPEAKERS[row["speaker"]], "caption_text": row["text"],
                 "emotion": row["emotion"], "visual_id": row["visual"], "scene_id": row.get("section", "main"),
                 "caption_emphasis_terms": row.get('caption_emphasis_terms', []),
                 "start": frame_position / 48000, "end": (frame_position + frames) / 48000,
-                "audio_sha256": sha256(directory / "voice.wav"), "cache": str(directory)})
+                "audio_sha256": sha256(directory / "voice.wav"), "cache": str(directory)}
+            for cue_key in ("topic", "focus_area", "motion", "diagram_steps", "visual_cue",
+                            "show_minimap", "cue_fallback_reason"):
+                if cue_key in row:
+                    record[cue_key] = row[cue_key]
+            records.append(record)
             frame_position += frames
     report["audio_seconds"] = frame_position / 48000
     report["audio_phase_seconds"] = round(time.monotonic() - started, 3)
     atomic_json(out / "cpu-voice-receipt.json", report)
-    atomic_json(out / "timing.json", {"records": records, "device": "cpu", "sample_rate": 48000})
+    atomic_json(out / "timing.json", {"records": records, "device": "cuda" if GPU_MODE else "cpu", "sample_rate": 48000})
     return records, report
 
 
@@ -311,7 +317,7 @@ def transcribe_audio(out, records, api_key):
     transcript = transcribe_narration(out / 'narration.wav', records,
         cache_dir=out / 'transcription-cache', api_key=api_key)
     atomic_json(out / 'transcription.json', transcript)
-    atomic_json(out / 'timing.json', {'records': records, 'device': 'cpu', 'sample_rate': 48000})
+    atomic_json(out / 'timing.json', {'records': records, 'device': 'cuda' if GPU_MODE else 'cpu', 'sample_rate': 48000})
     print(f"TRANSCRIBE: {transcript['status']} / {len(transcript['chunks'])} chunks / "
           f"{len(transcript['fallback_line_ids'])} fallback lines / {transcript['seconds']}s", flush=True)
     return {k: transcript[k] for k in ('model', 'status', 'seconds', 'fallback_line_ids')}
@@ -340,7 +346,11 @@ def render(project, runtime, out, records):
     atomic_json(out / "presentation.json", presentation)
     env = dict(os.environ, VIDEO_REVIEW_MODE="batch", DIRECT_ENCODE="1", OUT_CRF="20",
                OUT_VF=f"scale={output_width}:{output_height}:flags=lanczos", OUT_PRESET="veryfast", DIRECT_THREADS="4",
-               CUDA_VISIBLE_DEVICES="-1")
+               )
+    if GPU_MODE:
+        env.update(OUT_ENCODER='h264_nvenc', OUT_PRESET='p4')
+    else:
+        env['CUDA_VISIBLE_DEVICES'] = '-1'
     temporary = out / ("silent-" + uuid.uuid4().hex + ".mp4")
     print(f"RENDER: {output_width}×{output_height} / {profile['layout']['fps']}fps / veryfast / CRF20 / native expressions and mouth", flush=True)
     run_command([sys.executable, str(ROOT / "renderer/render_reusable_landscape_raw.py"),
@@ -410,7 +420,7 @@ def _execute(args, api_key):
                 return
         if (out / "video.mp4").exists():
             raise FileExistsError("Will not replace existing video.mp4")
-        state = {"input_key": input_key, "status": "AUDIO", "device": "cpu", "workers": WORKERS}
+        state = {"input_key": input_key, "status": "AUDIO", "device": "cuda" if GPU_MODE else "cpu", "workers": WORKERS}
         atomic_json(state_path, state)
         try:
             records, audio_report = prepare_audio(project, runtime, out, engine_sha)
@@ -435,7 +445,7 @@ def _execute(args, api_key):
                 total_seconds=round(time.monotonic() - started, 3), render_seconds=render_seconds,
                 fingerprint_seconds=fingerprint_seconds,
                 audio_phase_seconds=audio_report["audio_phase_seconds"],
-                max_parallel_synthesis=audio_report.get("max_parallel_synthesis", 0), gpu_used=False)
+                max_parallel_synthesis=audio_report.get("max_parallel_synthesis", 0), gpu_used=bool(audio_report.get('gpu_used')))
             atomic_json(state_path, state)
             print(json.dumps(state, ensure_ascii=False, indent=2), flush=True)
         except BaseException as error:
