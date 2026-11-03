@@ -1,3 +1,4 @@
+import json
 import unittest
 from datetime import datetime, timedelta, timezone
 
@@ -65,6 +66,86 @@ class FeedWatchTests(unittest.TestCase):
         items, errors = feed_watch.read_rsshub([{'id': 'hub', 'route': '/x'}], 5, '/no/such/folder')
         self.assertEqual(items, {})
         self.assertIn('hub', errors)
+
+
+class XApiTests(unittest.TestCase):
+    TWEETS = {'data': [
+        {'id': '200', 'text': '新モデル公開\nhttps://t.co/x', 'created_at': '2026-11-04T01:00:00.000Z',
+         'attachments': {'media_keys': ['m1', 'm2']}},
+        {'id': '199', 'text': '動画あり', 'created_at': '2026-11-04T00:00:00.000Z',
+         'attachments': {'media_keys': ['m3']}}],
+        'includes': {'media': [
+            {'media_key': 'm1', 'type': 'photo', 'url': 'https://pbs.twimg.com/media/a.jpg'},
+            {'media_key': 'm2', 'type': 'video', 'preview_image_url': 'https://pbs.twimg.com/p.jpg',
+             'variants': [{'content_type': 'application/x-mpegURL', 'url': 'https://video.twimg.com/a.m3u8'},
+                          {'content_type': 'video/mp4', 'bit_rate': 320000, 'url': 'https://video.twimg.com/low.mp4'},
+                          {'content_type': 'video/mp4', 'bit_rate': 832000, 'url': 'https://video.twimg.com/high.mp4'}]},
+            {'media_key': 'm3', 'type': 'animated_gif', 'preview_image_url': 'https://pbs.twimg.com/g.jpg',
+             'variants': []}]},
+        'meta': {'newest_id': '200', 'result_count': 2}}
+
+    def fake_get(self, calls, tweets=None):
+        def get(url, token):
+            calls.append(url)
+            if '/by/username/' in url:
+                return {'data': {'id': '42', 'username': 'OpenAI'}}
+            return tweets or self.TWEETS
+        return get
+
+    def test_posts_come_with_their_photos_and_the_best_video(self):
+        calls = []
+        state = {}
+        items = feed_watch.read_x_api({'id': 'x-openai', 'user': '@OpenAI', 'category': 'X（公式）'}, 5, 'tok',
+                                      state, get=self.fake_get(calls))
+        self.assertEqual(items[0]['url'], 'https://x.com/OpenAI/status/200')
+        self.assertEqual(items[0]['media'], [{'url': 'https://pbs.twimg.com/media/a.jpg', 'kind': 'image'},
+                                             {'url': 'https://video.twimg.com/high.mp4', 'kind': 'video'}])
+        self.assertEqual(items[1]['media'], [{'url': 'https://pbs.twimg.com/g.jpg', 'kind': 'image'}])
+        self.assertEqual(items[0]['category'], 'X（公式）')
+
+    def test_next_read_asks_only_for_newer_posts_and_keeps_the_user_id(self):
+        calls = []
+        state = {}
+        feed = {'id': 'x-openai', 'user': 'OpenAI'}
+        feed_watch.read_x_api(feed, 5, 'tok', state, get=self.fake_get(calls))
+        feed_watch.read_x_api(feed, 5, 'tok', state, get=self.fake_get(calls))
+        self.assertEqual(sum('/by/username/' in c for c in calls), 1)
+        self.assertNotIn('since_id', calls[1])
+        self.assertIn('since_id=200', calls[2])
+        self.assertEqual(state['x_since_id']['OpenAI'], '200')
+
+    def test_retweets_and_replies_are_left_out(self):
+        calls = []
+        feed_watch.read_x_api({'id': 'x', 'user': 'OpenAI'}, 5, 'tok', {}, get=self.fake_get(calls))
+        self.assertIn('exclude=retweets%2Creplies', calls[1])
+
+    def test_invalid_user_names_are_refused(self):
+        with self.assertRaises(ValueError):
+            feed_watch.read_x_api({'id': 'x', 'user': '../../etc'}, 5, 'tok', {}, get=self.fake_get([]))
+
+    def test_x_posts_never_become_web_sources_for_the_script(self):
+        items = [{'feed': 'x-openai', 'category': 'X（公式）', 'title': 'a', 'url': 'https://x.com/OpenAI/status/200',
+                  'media': []},
+                 {'feed': 'news', 'category': 'IT', 'title': 'b', 'url': 'https://news.example.com/1', 'media': []},
+                 {'feed': 'news2', 'category': 'IT', 'title': 'c', 'url': 'https://news.example.org/2', 'media': []}]
+        report = {}
+        picked = auto_topic.pick_from_feed(items, report=report, call=lambda p: {
+            'trends': [], 'skip': False, 'topic': '話題', 'sources': [
+                {'url': 'https://x.com/OpenAI/status/200', 'title': 'x'},
+                {'url': 'https://news.example.com/1', 'title': 'a'},
+                {'url': 'https://news.example.org/2', 'title': 'b'}]})
+        self.assertEqual(picked[1], ['https://news.example.com/1', 'https://news.example.org/2'])
+        self.assertEqual(report['x_urls'], ['https://x.com/OpenAI/status/200'])
+
+    def test_a_topic_with_only_x_sources_is_not_made(self):
+        items = [{'feed': 'x-openai', 'category': 'X（公式）', 'title': 'a', 'url': 'https://x.com/OpenAI/status/200',
+                  'media': []}]
+        report = {}
+        picked = auto_topic.pick_from_feed(items, report=report, call=lambda p: {
+            'trends': [], 'skip': False, 'topic': '話題', 'sources': [
+                {'url': 'https://x.com/OpenAI/status/200', 'title': 'x'}]})
+        self.assertIsNone(picked)
+        self.assertIn('2件', report['reason'])
 
 
 class MediaTests(unittest.TestCase):
@@ -139,9 +220,55 @@ class FeedTopicTests(unittest.TestCase):
             'skip': False, 'topic': '話題', 'sources': [{'url': 'https://example.com/1', 'title': 'a'}]})
         self.assertEqual(picked[1], ['https://example.com/1', 'https://example.com/2'])
 
-    def test_judge_is_opencode_by_default(self):
+    def test_judge_is_jev_on_openrouter_by_default(self):
         import inspect
-        self.assertEqual(inspect.signature(auto_topic.pick_from_feed).parameters['judge'].default, 'opencode')
+        self.assertEqual(inspect.signature(auto_topic.pick_from_feed).parameters['judge'].default, 'openrouter')
+
+
+class JevJudgeTests(unittest.TestCase):
+    def fake_response(self, content):
+        import io
+        payload = json.dumps({'choices': [{'message': {'content': content}}]}).encode('utf-8')
+        return io.BytesIO(payload)
+
+    def test_jev_reply_is_read_as_json_even_inside_a_code_fence(self):
+        from unittest import mock
+        reply = '```json\n{"trends": [], "skip": true, "topic": "", "sources": []}\n```'
+        with mock.patch.dict('os.environ', {'OPENROUTER_API_KEY': 'test-key'}), \
+             mock.patch('urllib.request.urlopen', return_value=self.fake_response(reply)) as opened:
+            result = auto_topic.judge_with_openrouter('新着の一覧')
+        self.assertEqual(result['skip'], True)
+        sent = json.loads(opened.call_args[0][0].data.decode('utf-8'))
+        self.assertEqual(sent['model'], 'typesafe/jev-router')
+        self.assertFalse(sent['stream'])
+
+    def test_errors_do_not_show_the_reply_or_the_key(self):
+        from unittest import mock
+        import urllib.error
+        error = urllib.error.HTTPError('https://openrouter.ai', 402, 'Payment', {}, None)
+        with mock.patch.dict('os.environ', {'OPENROUTER_API_KEY': 'secret-value'}), \
+             mock.patch('urllib.request.urlopen', side_effect=error):
+            with self.assertRaises(RuntimeError) as caught:
+                auto_topic.judge_with_openrouter('x')
+        self.assertIn('HTTP 402', str(caught.exception))
+        self.assertNotIn('secret-value', str(caught.exception))
+
+    def test_free_judge_sends_the_free_model_and_costs_nothing(self):
+        from unittest import mock
+        with mock.patch.dict('os.environ', {'OPENROUTER_API_KEY': 'test-key'}), \
+             mock.patch('urllib.request.urlopen', return_value=self.fake_response('{"skip": true}')) as opened:
+            auto_topic.pick_from_feed([{'feed': 'f', 'category': 'c', 'title': 't', 'url': 'https://e.example/1'}],
+                                      judge='openrouter-free')
+        sent = json.loads(opened.call_args[0][0].data.decode('utf-8'))
+        self.assertEqual(sent['model'], 'nvidia/nemotron-3.5-super-vl:free')
+        self.assertTrue(sent['model'].endswith(':free'))
+
+    def test_missing_key_is_refused_before_any_call(self):
+        from unittest import mock
+        with mock.patch.dict('os.environ', {}, clear=True), mock.patch('urllib.request.urlopen') as opened:
+            with self.assertRaises(RuntimeError):
+                auto_topic.judge_with_openrouter('x')
+        opened.assert_not_called()
 
     def test_items_carry_their_category(self):
         items = feed_watch.read_rss({'id': 'f', 'url': 'u', 'category': '科学'}, 5, get=lambda url: RSS)

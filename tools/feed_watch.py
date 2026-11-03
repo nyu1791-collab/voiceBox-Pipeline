@@ -9,10 +9,11 @@ import os
 import re
 import subprocess
 import sys
+from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime, timedelta, timezone
 from html import unescape
 from pathlib import Path
-from urllib.parse import urlsplit
+from urllib.parse import urlencode, urlsplit
 
 import feedparser
 import requests
@@ -141,6 +142,64 @@ def read_rsshub(feeds, limit, rsshub_dir):
     return items, errors
 
 
+X_API = 'https://api.x.com/2'
+X_USER = re.compile(r'^[A-Za-z0-9_]{1,15}$')
+
+
+def x_http(url, token):
+    """GET from the official X API with the bearer token. Errors show the status code only."""
+    response = requests.get(url, headers={'Authorization': 'Bearer ' + token, 'User-Agent': UA}, timeout=30)
+    if response.status_code != 200:
+        raise RuntimeError(f'X API HTTP {response.status_code}')
+    return response.json()
+
+
+def x_media(media):
+    """One photo or video of an X post as {url, kind}. Videos take the highest-bitrate MP4."""
+    kind = media.get('type')
+    if kind == 'photo' and media.get('url', '').startswith('https://'):
+        return {'url': media['url'], 'kind': 'image'}
+    if kind in ('video', 'animated_gif'):
+        mp4 = [v for v in media.get('variants', []) if v.get('content_type') == 'video/mp4' and
+               str(v.get('url', '')).startswith('https://')]
+        if mp4:
+            best = max(mp4, key=lambda v: v.get('bit_rate') or 0)
+            return {'url': best['url'], 'kind': 'video'}
+    preview = media.get('preview_image_url', '')
+    return {'url': preview, 'kind': 'image'} if preview.startswith('https://') else None
+
+
+def read_x_api(feed, limit, token, state, get=x_http):
+    """Latest posts of one X account through the official API. Only posts newer than the last one read are
+    fetched (since_id), so a post is read and charged once. Retweets and replies are left out."""
+    user = feed['user'].lstrip('@')
+    if not X_USER.match(user):
+        raise ValueError(f'invalid X user name: {user}')
+    user_ids = state.setdefault('x_user_ids', {})
+    if user not in user_ids:
+        user_ids[user] = get(f'{X_API}/users/by/username/{user}', token)['data']['id']
+    params = {'max_results': max(5, min(limit, 100)), 'exclude': 'retweets,replies', 'tweet.fields': 'created_at',
+              'expansions': 'attachments.media_keys', 'media.fields': 'type,url,preview_image_url,variants'}
+    since = state.setdefault('x_since_id', {}).get(user)
+    if since:
+        params['since_id'] = since
+    data = get(f'{X_API}/users/{user_ids[user]}/tweets?' + urlencode(params), token)
+    newest = (data.get('meta') or {}).get('newest_id')
+    if newest:
+        state['x_since_id'][user] = newest
+    media_by_key = {m.get('media_key'): m for m in (data.get('includes') or {}).get('media', [])}
+    items = []
+    for post in data.get('data', []):
+        media = [x_media(media_by_key[key]) for key in (post.get('attachments') or {}).get('media_keys', [])
+                 if key in media_by_key]
+        url = f'https://x.com/{user}/status/{post["id"]}'
+        items.append({'feed': feed['id'], 'category': feed.get('category', ''),
+                      'title': plain(post.get('text', ''), 200),
+                      'url': url, 'published': post.get('created_at', ''), 'summary': plain(post.get('text', '')),
+                      'id': item_id(url), 'media': [m for m in media if m][:MEDIA_PER_ITEM]})
+    return items
+
+
 def load_state(path):
     try:
         return json.loads(Path(path).read_text(encoding='utf-8'))
@@ -180,21 +239,32 @@ def main():
 
     config = json.loads(args.config.read_text(encoding='utf-8'))
     limit = int(config.get('max_items_per_feed', 20))
+    now = datetime.now(timezone.utc)
+    state = load_state(args.state)
     items, errors = [], {}
-    for feed in config['feeds']:
-        if feed['type'] != 'rss':
-            continue
-        try:
-            items += read_rss(feed, limit)
-        except Exception as exc:  # one broken feed must not stop the others
-            errors[feed['id']] = f'{type(exc).__name__}: {exc}'[:300]
+    rss_feeds = [f for f in config['feeds'] if f['type'] == 'rss']
+    # RSS の情報源は同時に取る（順番に待つと時間がかかるため）。失敗した情報源は記録し、ほかは続ける。
+    with ThreadPoolExecutor(max_workers=8) as pool:
+        futures = {feed['id']: pool.submit(read_rss, feed, limit) for feed in rss_feeds}
+        for feed_id, future in futures.items():
+            try:
+                items += future.result()
+            except Exception as exc:
+                errors[feed_id] = f'{type(exc).__name__}: {exc}'[:300]
     hub_items, hub_errors = read_rsshub([f for f in config['feeds'] if f['type'] == 'rsshub'], limit, args.rsshub_dir)
     for feed_items in hub_items.values():
         items += feed_items
     errors.update(hub_errors)
+    token = os.environ.get('X_API_BEARER_TOKEN', '')
+    for feed in [f for f in config['feeds'] if f['type'] == 'x_api']:
+        if not token:
+            errors[feed['id']] = 'X_API_BEARER_TOKEN is not configured'
+            continue
+        try:
+            items += read_x_api(feed, limit, token, state)
+        except Exception as exc:
+            errors[feed['id']] = f'{type(exc).__name__}: {exc}'[:300]
 
-    now = datetime.now(timezone.utc)
-    state = load_state(args.state)
     fresh, first_run = select_new(items, state, now)
     save_state(args.state, state)
     fresh = fresh[:OUT_LIMIT]
