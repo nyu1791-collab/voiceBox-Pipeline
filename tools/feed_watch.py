@@ -12,6 +12,7 @@ import sys
 from datetime import datetime, timedelta, timezone
 from html import unescape
 from pathlib import Path
+from urllib.parse import urlsplit
 
 import feedparser
 import requests
@@ -37,6 +38,43 @@ def fetch(url):
     return response.content
 
 
+MEDIA_PER_ITEM = 4
+IMG_SRC = re.compile(r'<img[^>]+src="(https://[^"]+)"', re.IGNORECASE)
+MEDIA_EXT = {'.jpg': 'image', '.jpeg': 'image', '.png': 'image', '.gif': 'image', '.webp': 'image',
+             '.mp4': 'video', '.webm': 'video'}
+
+
+def media_kind(content_type, url):
+    """'image' or 'video' from the MIME type, or from the file extension when the type is missing."""
+    if content_type.startswith('image/'):
+        return 'image'
+    if content_type.startswith('video/'):
+        return 'video'
+    suffix = Path(urlsplit(url).path).suffix.lower()
+    return MEDIA_EXT.get(suffix)
+
+
+def media_of(entry_or_item, html=''):
+    """Image and video URLs (https only) that a feed item points to. They are downloaded later, only for
+    the sources of a chosen topic (tools/feed_media.py)."""
+    found = []
+
+    def add(url, kind):
+        if (kind and isinstance(url, str) and url.startswith('https://') and len(found) < MEDIA_PER_ITEM
+                and url not in [m['url'] for m in found]):
+            found.append({'url': url, 'kind': kind})
+
+    for enclosure in entry_or_item.get('enclosures', []) or []:
+        add(enclosure.get('href'), media_kind(enclosure.get('type', ''), enclosure.get('href', '')))
+    for content in entry_or_item.get('media_content', []) or []:
+        add(content.get('url'), media_kind(content.get('type', ''), content.get('url', '')))
+    for thumbnail in entry_or_item.get('media_thumbnail', []) or []:
+        add(thumbnail.get('url'), 'image')
+    for url in IMG_SRC.findall(html):
+        add(unescape(url), 'image')
+    return found
+
+
 def read_rss(feed, limit, get=fetch):
     parsed = feedparser.parse(get(feed['url']))
     # Newest first, whatever order the feed uses; entries without a date keep their place at the end.
@@ -47,10 +85,12 @@ def read_rss(feed, limit, get=fetch):
         link = entry.get('link', '')
         if not link.startswith('https://') and not link.startswith('http://'):
             continue
+        html = (entry.get('summary') or '') + ' '.join(c.get('value', '') for c in entry.get('content', []) or [])
         items.append({'feed': feed['id'], 'category': feed.get('category', ''),
                       'title': plain(entry.get('title', ''), 200), 'url': link,
                       'published': entry.get('published', entry.get('updated', '')),
-                      'summary': plain(entry.get('summary', '')), 'id': item_id(link, entry.get('id', ''))})
+                      'summary': plain(entry.get('summary', '')), 'id': item_id(link, entry.get('id', '')),
+                      'media': media_of(entry, html)})
     return items
 
 
@@ -92,7 +132,11 @@ def read_rsshub(feeds, limit, rsshub_dir):
         items[feed['id']] = [{'feed': feed['id'], 'category': feed.get('category', ''),
                               'title': plain(it.get('title', ''), 200), 'url': it.get('link', ''),
                               'published': str(it.get('pubDate', '')), 'summary': plain(it.get('description', '')),
-                              'id': item_id(it.get('link', ''), str(it.get('guid', '')))}
+                              'id': item_id(it.get('link', ''), str(it.get('guid', ''))),
+                              'media': media_of({'enclosures': [{'href': it['enclosure']['url'],
+                                                                  'type': it['enclosure'].get('type', '')}]}
+                                                if (it.get('enclosure') or {}).get('url') else {},
+                                                it.get('description', '') or '')}
                              for it in (result.get('item') or [])[:limit] if it.get('link')]
     return items, errors
 
