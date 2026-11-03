@@ -11,13 +11,17 @@
 5. **音声・描画（Colab GPU）** — 未接続。`colab/zundamon_gpu_pipeline.ipynb` と `tools/colab_gpu_run.py` は実機確認前の下書き（[COLAB_GPU_DRAFT.md](COLAB_GPU_DRAFT.md)）。素材を Colab へ渡す方法とGPU実行の確認が残っている。
 6. **YouTubeへ非公開で載せる** — `tools/youtube_upload.py`。既定は `private`。`public` は `--privacy public` を付けた時だけ。
 
-## RSSの新着から話題を選ぶ（feed-watch.yml、2026-11-03）
+## 新着から話題を選び、台本と素材を作る（feed-watch.yml、2026-11-04 改訂）
 
-- `.github/workflows/feed-watch.yml` が毎時23分に `config/feeds.json` のRSS・RSSHub経路を見る（`tools/feed_watch.py`）。既読の記録はActionsのキャッシュ `feed-state-*`。初回は今ある記事を既読にするだけ。
-- 新着があれば、Gemini（`auto_topic.py --candidates`）が新着を読み、動画にする価値がある話題を1つ選ぶ。無ければ選ばない。一覧の記事URLに加えて別の根拠を検索で探し、検索の転送用リンクは実際の出典URLに直す。1日の作成数は変数 `FEED_DAILY_MAX`（既定3）まで。
-- その後は video-auto.yml と同じく `video_job.py plan` まで（費用なし）。手順4以降の接続は video-auto と同じ未接続の状態。
-- 定期実行はリポジトリ変数 `FEED_WATCH_ENABLED` を `true` にした時だけ動く。video-auto と同じ並び（concurrency）なので同時には選ばない。
-- 確認済み: 単体テスト、actionlint、このPCでの実フィードの取得（9件・162記事）、新着8件からGeminiが話題を選びジョブを作るまで。
+- **いつ動くか**：8時間ごと（日本時間 08:23・16:23・00:23）。変数 `FEED_WATCH_ENABLED` が `true` のときだけ定期実行する。手動実行（`workflow_dispatch`）はいつでも動く。`usage_only` を選ぶと、X APIの使用量だけを表示する。
+- **何を見るか**：`config/feeds.json` の約106の情報源。報道・公式サイト・ネットの話題・ゲーム・エンタメ・政府機関のRSS（無料）と、X の公式アカウント10件（AI企業7件＋世界のニュース3件、X API）。
+- **Xの読み方**：公式APIで、アカウント本人の投稿だけを読む。返信・リポスト・引用は除く（ほかの人の文章を含むため）。前回読んだ投稿より新しいものだけを読む（since_id）。読んだ投稿1件 0.005ドル。画像と動画は、投稿の情報に入っている配信先から取る（API課金の対象外と見込むが、次回の使用量で確かめる）。
+- **判断**：Jev（OpenRouter）が新着を評価し、動画にする話題を1つ選ぶ。根拠は Web の記事2件以上（Xの投稿は根拠にしない）。選ばなければ何もしない。1日の作成数は `FEED_DAILY_MAX`（既定3）まで。
+- **台本**：Gemini 3.8 Flash が、選ばれた話題の Web 記事（最大3件）から台本を作る（費用あり。Geminiの調査と台本の2回）。
+- **素材**：選ばれた話題の根拠の画像・動画をダウンロードする（並列・画像30MB・動画100MB・1話題8件まで）。Xの投稿は、本文と画像から1枚のカードを作る（Xのページは撮らない）。
+- **保存**：素材・カード・台本の下書きは、Artifactに入れない（このリポジトリは公開のため）。実行の最後に消す。動画制作の後は `feed_media.py discard` で破棄する。
+- **まだつながっていない所**：音声（VOICEVOX）と動画の書き出し（Colab GPU）。台本の保存先は未決定（非公開の場所を決める）。
+- **確認済み**：単体テスト78件、actionlint、このPCでのフィード取得・Jevの判断・台本作成（44行）・画像のダウンロード（41.9KB）・カード作成。GitHub上の台本とカードの工程は、まだ確かめていない。
 
 ## 承認が必要な所
 

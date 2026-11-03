@@ -165,7 +165,8 @@ def x_media(media):
                str(v.get('url', '')).startswith('https://')]
         if mp4:
             best = max(mp4, key=lambda v: v.get('bit_rate') or 0)
-            return {'url': best['url'], 'kind': 'video'}
+            preview = media.get('preview_image_url', '')
+            return {'url': best['url'], 'kind': 'video', 'preview': preview if preview.startswith('https://') else ''}
     preview = media.get('preview_image_url', '')
     return {'url': preview, 'kind': 'image'} if preview.startswith('https://') else None
 

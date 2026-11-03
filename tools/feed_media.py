@@ -21,7 +21,8 @@ import requests
 
 UA = 'voiceBox-feed-media/1.0 (+https://github.com/nyu1791-collab/voiceBox-Pipeline)'
 MAX_FILES = 8
-MAX_BYTES = 30 * 1024 * 1024
+MAX_BYTES = 30 * 1024 * 1024        # 画像
+MAX_VIDEO_BYTES = 100 * 1024 * 1024  # 動画
 MAX_TOTAL = 150 * 1024 * 1024
 EXT = {'image/jpeg': '.jpg', 'image/png': '.png', 'image/gif': '.gif', 'image/webp': '.webp',
        'video/mp4': '.mp4', 'video/webm': '.webm'}
@@ -58,9 +59,10 @@ def download(session, article, media):
         content_type = response.headers.get('content-type', '').split(';')[0].strip().lower()
         if content_type not in EXT or content_type.split('/')[0] != media.get('kind'):
             return {'url': url, 'reason': f'type {content_type or "missing"}'}
-        if int(response.headers.get('content-length') or 0) > MAX_BYTES:
+        limit = MAX_VIDEO_BYTES if media.get('kind') == 'video' else MAX_BYTES
+        if int(response.headers.get('content-length') or 0) > limit:
             return {'url': url, 'reason': 'too large'}
-        data = read_limited(response, MAX_BYTES)
+        data = read_limited(response, limit)
     if data is None:
         return {'url': url, 'reason': 'too large'}
     return {'url': url, 'data': data, 'content_type': content_type, 'kind': media['kind'],
