@@ -1,5 +1,5 @@
 {
-  "note": "feed-watch.yml が8時間ごとに見る情報源（公式サイト・報道・ネットの話題・著名人の公式チャンネル）。rss はそのままのフィードURL、rsshub はRSSHubの経路（https://docs.rsshub.app/routes/）。category はトレンド分析で界隈を区別するために使う。追加・削除はこの一覧だけを編集する。",
+  "note": "feed-watch.yml が8時間ごとに見る情報源（公式サイト・報道・ネットの話題・著名人の公式チャンネル）。rss はそのままのフィードURL、rsshub はRSSHubの経路（https://docs.rsshub.app/routes/）。category はトレンド分析で界隈を区別するために使う。追加・削除はこの一覧だけを編集する。 x_api は X の公式APIで、アカウントの最新の投稿を読む（X_API_BEARER_TOKEN が必要。新しい投稿だけを読む）。",
   "max_items_per_feed": 15,
   "feeds": [
     {"id": "asahi", "type": "rss", "url": "https://www.asahi.com/rss/asahi/newsheadlines.rdf", "category": "ニュース総合"},
@@ -106,6 +106,10 @@
     {"id": "fsa", "type": "rss", "url": "https://www.fsa.go.jp/fsaNewsListAll_rss2.xml", "category": "政府・公的"},
     {"id": "kantei", "type": "rss", "url": "https://www.kantei.go.jp/index-jnews.rdf", "category": "政府・公的"},
     {"id": "mhlw", "type": "rss", "url": "https://www.mhlw.go.jp/stf/news.rdf", "category": "政府・公的"},
-    {"id": "lifehacker-jp", "type": "rss", "url": "https://www.lifehacker.jp/feed/index.xml", "category": "暮らし"}
+    {"id": "lifehacker-jp", "type": "rss", "url": "https://www.lifehacker.jp/feed/index.xml", "category": "暮らし"},
+    {"id": "x-openai", "type": "x_api", "user": "OpenAI", "category": "X（公式）"},
+    {"id": "x-anthropic", "type": "x_api", "user": "AnthropicAI", "category": "X（公式）"},
+    {"id": "x-claude", "type": "x_api", "user": "claudeai", "category": "X（公式）"},
+    {"id": "x-google-deepmind", "type": "x_api", "user": "GoogleDeepMind", "category": "X（公式）"}
   ]
 }

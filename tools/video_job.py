@@ -46,8 +46,9 @@ def list_jobs(directory):
 
 def request_from_job(job):
     """prepare_project.py が読む依頼の形（Gemini で調査・台本を作る）。"""
+    # 根拠の上限は、判断で選んだ記事の数に合わせる（Gemini が読みに行くページが多すぎると入力の上限を超える）。
     return {"topic": job["topic"].strip(), "urls": list(job.get("urls", [])), "provider": "gemini",
-            "minutes": 10, "max_sources": 8, "job_id": job["id"]}
+            "minutes": 10, "max_sources": max(3, len(job.get("urls", []))), "job_id": job["id"]}
 
 
 def write_plan(job, out):

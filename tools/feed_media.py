@@ -13,6 +13,7 @@ import hashlib
 import json
 import shutil
 import sys
+from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime, timezone
 from pathlib import Path
 
@@ -42,54 +43,59 @@ def read_limited(response, limit):
     return bytes(data)
 
 
+def download(session, article, media):
+    """Fetch one media file. Returns a dict with the bytes, or a dict with the reason it was skipped."""
+    url = media.get('url', '')
+    if not url.startswith('https://'):
+        return {'url': url, 'reason': 'not https'}
+    try:
+        response = session.get(url, stream=True, timeout=30, headers={'User-Agent': UA})
+    except requests.RequestException as error:
+        return {'url': url, 'reason': type(error).__name__}
+    with response:
+        if response.status_code != 200:
+            return {'url': url, 'reason': f'HTTP {response.status_code}'}
+        content_type = response.headers.get('content-type', '').split(';')[0].strip().lower()
+        if content_type not in EXT or content_type.split('/')[0] != media.get('kind'):
+            return {'url': url, 'reason': f'type {content_type or "missing"}'}
+        if int(response.headers.get('content-length') or 0) > MAX_BYTES:
+            return {'url': url, 'reason': 'too large'}
+        data = read_limited(response, MAX_BYTES)
+    if data is None:
+        return {'url': url, 'reason': 'too large'}
+    return {'url': url, 'data': data, 'content_type': content_type, 'kind': media['kind'],
+            'source_url': article['url']}
+
+
 def fetch(job, items, out_dir, session=None):
-    """Download the media of the job's source articles. Returns the manifest (also written to out_dir)."""
+    """Download the media of the job's source articles (news and X posts), several at a time.
+    Returns the manifest, also written to out_dir."""
     session = session or requests.Session()
-    sources = set(job.get('urls', []))
-    articles = [it for it in items if it.get('url') in sources]
+    sources = set(job.get('urls', [])) | set(job.get('x_urls', []))
+    candidates = [(article, media) for article in items if article.get('url') in sources
+                  for media in article.get('media', [])][:MAX_FILES * 2]
+    with ThreadPoolExecutor(max_workers=6) as pool:
+        results = list(pool.map(lambda pair: download(session, *pair), candidates))
     out_dir = Path(out_dir)
     out_dir.mkdir(parents=True, exist_ok=True)
     files, skipped, total = [], [], 0
-    for article in articles:
-        for media in article.get('media', []):
-            url = media.get('url', '')
-            if len(files) >= MAX_FILES:
-                skipped.append({'url': url, 'reason': 'file limit'})
-                continue
-            if not url.startswith('https://'):
-                skipped.append({'url': url, 'reason': 'not https'})
-                continue
-            try:
-                response = session.get(url, stream=True, timeout=30, headers={'User-Agent': UA})
-            except requests.RequestException as error:
-                skipped.append({'url': url, 'reason': type(error).__name__})
-                continue
-            with response:
-                if response.status_code != 200:
-                    skipped.append({'url': url, 'reason': f'HTTP {response.status_code}'})
-                    continue
-                content_type = response.headers.get('content-type', '').split(';')[0].strip().lower()
-                if content_type not in EXT or content_type.split('/')[0] != media.get('kind'):
-                    skipped.append({'url': url, 'reason': f'type {content_type or "missing"}'})
-                    continue
-                declared = int(response.headers.get('content-length') or 0)
-                if declared > MAX_BYTES:
-                    skipped.append({'url': url, 'reason': 'too large'})
-                    continue
-                data = read_limited(response, MAX_BYTES)
-            if data is None:
-                skipped.append({'url': url, 'reason': 'too large'})
-                continue
-            if total + len(data) > MAX_TOTAL:
-                skipped.append({'url': url, 'reason': 'total limit'})
-                continue
-            digest = hashlib.sha256(data).hexdigest()
-            name = f'{len(files) + 1:02d}-{digest[:12]}{EXT[content_type]}'
-            (out_dir / name).write_bytes(data)
-            total += len(data)
-            files.append({'file': name, 'source_url': article['url'], 'media_url': url,
-                          'kind': media['kind'], 'content_type': content_type, 'bytes': len(data),
-                          'sha256': digest, 'retrieved_at': utc_now()})
+    for result in results:
+        if 'data' not in result:
+            skipped.append({'url': result['url'], 'reason': result['reason']})
+            continue
+        if len(files) >= MAX_FILES:
+            skipped.append({'url': result['url'], 'reason': 'file limit'})
+            continue
+        if total + len(result['data']) > MAX_TOTAL:
+            skipped.append({'url': result['url'], 'reason': 'total limit'})
+            continue
+        digest = hashlib.sha256(result['data']).hexdigest()
+        name = f'{len(files) + 1:02d}-{digest[:12]}{EXT[result["content_type"]]}'
+        (out_dir / name).write_bytes(result['data'])
+        total += len(result['data'])
+        files.append({'file': name, 'source_url': result['source_url'], 'media_url': result['url'],
+                      'kind': result['kind'], 'content_type': result['content_type'], 'bytes': len(result['data']),
+                      'sha256': digest, 'retrieved_at': utc_now()})
     manifest = {'job_id': job.get('id'), 'topic': job.get('topic'), 'created': utc_now(), 'usage': USAGE,
                 'files': files, 'skipped': skipped, 'total_bytes': total}
     (out_dir / 'manifest.json').write_text(json.dumps(manifest, ensure_ascii=False, indent=2) + '\n',
