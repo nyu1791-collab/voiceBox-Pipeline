@@ -8,7 +8,8 @@ import sys
 import urllib.error
 import urllib.request
 
-URL = 'https://api.x.com/2/usage/tweets?days=7&usage.fields=daily_project_usage,daily_client_app_usage,cap_reset_day,project_cap'
+URL = ('https://api.x.com/2/usage/tweets?days=7'
+       '&usage.fields=daily_project_usage,daily_client_app_usage,cap_reset_day,project_cap')
 
 
 def main():
@@ -16,7 +17,8 @@ def main():
     if not token:
         print('X_API_BEARER_TOKEN が設定されていません')
         return 1
-    request = urllib.request.Request(URL, headers={'Authorization': 'Bearer ' + token, 'User-Agent': 'voiceBox-x-usage/1.0'})
+    headers = {'Authorization': 'Bearer ' + token, 'User-Agent': 'voiceBox-x-usage/1.0'}
+    request = urllib.request.Request(URL, headers=headers)
     try:
         with urllib.request.urlopen(request, timeout=30) as response:
             data = json.load(response)

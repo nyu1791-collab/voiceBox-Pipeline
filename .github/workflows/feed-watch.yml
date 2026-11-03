@@ -114,6 +114,17 @@ jobs:
             id=$(basename "$job" .json)
             python tools/feed_media.py fetch --job "$job" --items "$RUNNER_TEMP/out/new-items.json" --out "$RUNNER_TEMP/media/$id"
           done
+      - name: Install Japanese fonts for the post card
+        if: steps.feeds.outputs.new_count != '0'
+        run: sudo apt-get update -qq && sudo apt-get install -y -qq fonts-noto-cjk
+      - name: Make the post card (one X post, drawn from the API data; X itself is not screenshotted)
+        if: steps.feeds.outputs.new_count != '0'
+        run: |
+          for job in "$RUNNER_TEMP"/out/jobs/*.json; do
+            [ -e "$job" ] || continue
+            id=$(basename "$job" .json)
+            python tools/post_card.py --job "$job" --items "$RUNNER_TEMP/out/new-items.json" --media "$RUNNER_TEMP/media/$id"
+          done
       - name: Keep the trend report, new items and jobs (14 days; media is never uploaded)
         if: always() && steps.feeds.outputs.new_count != '0'
         uses: actions/upload-artifact@v4

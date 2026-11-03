@@ -99,7 +99,8 @@ class XApiTests(unittest.TestCase):
                                       state, get=self.fake_get(calls))
         self.assertEqual(items[0]['url'], 'https://x.com/OpenAI/status/200')
         self.assertEqual(items[0]['media'], [{'url': 'https://pbs.twimg.com/media/a.jpg', 'kind': 'image'},
-                                             {'url': 'https://video.twimg.com/high.mp4', 'kind': 'video'}])
+                                             {'url': 'https://video.twimg.com/high.mp4', 'kind': 'video',
+                                              'preview': 'https://pbs.twimg.com/p.jpg'}])
         self.assertEqual(items[1]['media'], [{'url': 'https://pbs.twimg.com/g.jpg', 'kind': 'image'}])
         self.assertEqual(items[0]['category'], 'X（公式）')
 
