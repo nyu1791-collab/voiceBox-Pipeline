@@ -21,6 +21,10 @@ class CardTests(unittest.TestCase):
         self.assertIn('@OpenAI', page)
         self.assertIn('https://x.com/OpenAI/status/200', page)
 
+    def test_card_states_the_source(self):
+        page = post_card.build_html(dict(POST, source='@OpenAI（X公式）'))
+        self.assertIn('出典: @OpenAI（X公式）', page)
+
     def test_picture_is_embedded_as_data_when_given(self):
         page = post_card.build_html(POST, picture_url='data:image/png;base64,AAAA')
         self.assertIn('src="data:image/png;base64,AAAA"', page)

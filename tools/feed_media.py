@@ -44,6 +44,12 @@ def read_limited(response, limit):
     return bytes(data)
 
 
+def credit_of(article):
+    """The source line that goes with every picture or clip: who published it, and where."""
+    name = article.get('source') or article.get('feed') or ''
+    return f"出典: {name}（{article.get('url', '')}）"
+
+
 def download(session, article, media):
     """Fetch one media file. Returns a dict with the bytes, or a dict with the reason it was skipped."""
     url = media.get('url', '')
@@ -66,7 +72,7 @@ def download(session, article, media):
     if data is None:
         return {'url': url, 'reason': 'too large'}
     return {'url': url, 'data': data, 'content_type': content_type, 'kind': media['kind'],
-            'source_url': article['url']}
+            'source_url': article['url'], 'credit': credit_of(article)}
 
 
 def fetch(job, items, out_dir, session=None):
@@ -96,6 +102,7 @@ def fetch(job, items, out_dir, session=None):
         (out_dir / name).write_bytes(result['data'])
         total += len(result['data'])
         files.append({'file': name, 'source_url': result['source_url'], 'media_url': result['url'],
+                      'credit': result['credit'],
                       'kind': result['kind'], 'content_type': result['content_type'], 'bytes': len(result['data']),
                       'sha256': digest, 'retrieved_at': utc_now()})
     manifest = {'job_id': job.get('id'), 'topic': job.get('topic'), 'created': utc_now(), 'usage': USAGE,
