@@ -9,6 +9,11 @@ on:
   schedule:
     - cron: "23 23,7,15 * * *"   # UTC。日本時間 08:23・16:23・00:23
   workflow_dispatch:
+    inputs:
+      usage_only:
+        description: 'X API の使用量だけを表示する（取得・判断・台本は行わない）'
+        type: boolean
+        default: false
 permissions:
   contents: read
 concurrency:
@@ -17,8 +22,21 @@ concurrency:
 env:
   RSSHUB_VERSION: 1.0.0-master.6a75df8
 jobs:
+  usage:
+    if: ${{ github.event_name == 'workflow_dispatch' && inputs.usage_only }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Show the X API usage (last 7 days)
+        env:
+          X_API_BEARER_TOKEN: ${{ secrets.X_API_BEARER_TOKEN }}
+        run: python tools/x_usage.py
   watch:
-    if: ${{ github.event_name == 'workflow_dispatch' || vars.FEED_WATCH_ENABLED == 'true' }}
+    if: ${{ (github.event_name == 'workflow_dispatch' && !inputs.usage_only) || vars.FEED_WATCH_ENABLED == 'true' }}
     runs-on: ubuntu-latest
     timeout-minutes: 20
     steps:
