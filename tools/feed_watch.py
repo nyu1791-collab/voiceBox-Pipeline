@@ -1,7 +1,10 @@
-"""RSSと RSSHub の経路を見て、前回から増えた記事だけを書き出す（feed-watch.yml から1時間ごとに呼ぶ）。
+"""RSS・RSSHub の経路・Xの公開プロフィールを見て、前回から増えた記事だけを書き出す。
+feed-watch.yml から1時間ごとに呼ぶ。
 既読の記録（state）が無い最初の実行では、今ある記事を既読にするだけで新着として出さない。
   python tools/feed_watch.py --config config/feeds.json --state feed-state.json --out new-items.json
-RSSHub の経路は Node の rsshub パッケージで取得する（--rsshub-dir にインストール先を渡す）。費用はかからない。"""
+RSSHub の経路は Node の rsshub パッケージで取得する（--rsshub-dir にインストール先を渡す）。
+X はログインせずに https://x.com/<user> を読み、FreshRSS X Profiles 拡張の解析（PHP）で最新の投稿を取り出す
+（--x-parser-dir に拡張の置き場所、X_PHP に php の場所）。費用はかからない。"""
 import argparse
 import hashlib
 import json
@@ -9,6 +12,7 @@ import os
 import re
 import subprocess
 import sys
+import tempfile
 from datetime import datetime, timedelta, timezone
 from html import unescape
 from pathlib import Path
@@ -95,6 +99,30 @@ def read_rsshub(feeds, limit, rsshub_dir):
     return items, errors
 
 
+X_USER = re.compile(r'^[A-Za-z0-9_]{1,15}$')
+
+
+def read_x(feed, limit, parser_dir, php=None, get=fetch):
+    """Latest public posts of one X account, without signing in. Same parser as tools/x-public-profile.ps1."""
+    user = feed['user'].lstrip('@')
+    if not X_USER.match(user):
+        raise ValueError(f'invalid X user name: {user}')
+    if not parser_dir:
+        raise RuntimeError('X parser is not installed (--x-parser-dir)')
+    php = php or os.environ.get('X_PHP', 'php').split()
+    with tempfile.NamedTemporaryFile(suffix='.html', delete=False) as handle:
+        handle.write(get(f'https://x.com/{user}'))
+    page = Path(handle.name)
+    try:
+        done = subprocess.run([*php, str(Path(parser_dir) / 'tests' / 'preview.php'), str(page), user, '--rss'],
+                              capture_output=True, timeout=120)
+    finally:
+        page.unlink(missing_ok=True)
+    if done.returncode != 0 or not done.stdout:
+        raise RuntimeError((done.stderr.decode('utf-8', 'replace') or 'no public posts on the page').strip()[:300])
+    return read_rss({'id': feed['id'], 'url': ''}, limit, get=lambda _url: done.stdout)
+
+
 def load_state(path):
     try:
         return json.loads(Path(path).read_text(encoding='utf-8'))
@@ -130,16 +158,18 @@ def main():
     parser.add_argument('--state', type=Path, required=True)
     parser.add_argument('--out', type=Path, required=True)
     parser.add_argument('--rsshub-dir', default=os.environ.get('RSSHUB_DIR'))
+    parser.add_argument('--x-parser-dir', default=os.environ.get('X_PARSER_DIR'))
     args = parser.parse_args()
 
     config = json.loads(args.config.read_text(encoding='utf-8'))
     limit = int(config.get('max_items_per_feed', 20))
     items, errors = [], {}
     for feed in config['feeds']:
-        if feed['type'] != 'rss':
-            continue
         try:
-            items += read_rss(feed, limit)
+            if feed['type'] == 'rss':
+                items += read_rss(feed, limit)
+            elif feed['type'] == 'x':
+                items += read_x(feed, limit, args.x_parser_dir)
         except Exception as exc:  # one broken feed must not stop the others
             errors[feed['id']] = f'{type(exc).__name__}: {exc}'[:300]
     hub_items, hub_errors = read_rsshub([f for f in config['feeds'] if f['type'] == 'rsshub'], limit, args.rsshub_dir)

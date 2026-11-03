@@ -1,5 +1,5 @@
 {
-  "note": "feed-watch.yml が1時間ごとに見る情報源。rss はそのままのフィードURL、rsshub はRSSHubの経路（https://docs.rsshub.app/routes/）。追加・削除はこの一覧だけを編集する。",
+  "note": "feed-watch.yml が1時間ごとに見る情報源。rss はそのままのフィードURL、rsshub はRSSHubの経路（https://docs.rsshub.app/routes/）、x はXのアカウント名（ログインせずに公開プロフィールの最新投稿、約5件）。追加・削除はこの一覧だけを編集する。",
   "max_items_per_feed": 20,
   "feeds": [
     {"id": "nhk-main", "type": "rss", "url": "https://www3.nhk.or.jp/rss/news/cat0.xml"},
@@ -10,6 +10,10 @@
     {"id": "openai-news", "type": "rss", "url": "https://openai.com/news/rss.xml"},
     {"id": "google-ai-blog", "type": "rss", "url": "https://blog.google/technology/ai/rss/"},
     {"id": "huggingface-blog", "type": "rss", "url": "https://huggingface.co/blog/feed.xml"},
-    {"id": "hackernews-best", "type": "rsshub", "route": "/hackernews/best"}
+    {"id": "hackernews-best", "type": "rsshub", "route": "/hackernews/best"},
+    {"id": "x-openai", "type": "x", "user": "OpenAI"},
+    {"id": "x-anthropic", "type": "x", "user": "AnthropicAI"},
+    {"id": "x-claude", "type": "x", "user": "claudeai"},
+    {"id": "x-google-deepmind", "type": "x", "user": "GoogleDeepMind"}
   ]
 }
