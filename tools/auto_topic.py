@@ -1,10 +1,10 @@
-"""Geminiに公開ニュースから動画にする話題を1つ選ばせ、承認済みの動画ジョブ（job JSON）を作る。
+"""新着から動画にする話題を1つ選び（既定は Jev＝OpenRouter）、承認済みの動画ジョブ（job JSON）を作る。
 人の承認は挟まない（利用者の2026-11-03の指示）。根拠URLは https のみ受け付け、Geminiが返した内容をそのまま信じない。
   python tools/auto_topic.py --jobs 出力フォルダ
   python tools/auto_topic.py --jobs 出力フォルダ --candidates new-items.json --state feed-state.json --daily-max 3
 --candidates を渡すと、RSSの新着（tools/feed_watch.py の出力）からトレンドを分析し（--report に保存）、
 人気が出そうな話題を1つ選ぶ。動画にする価値が無ければ選ばない。
-費用: Geminiの呼び出しが1回かかる（新着が無い・上限に達した時は呼ばない）。"""
+費用: 判断の呼び出しが1回かかる（新着が無い・上限に達した時は呼ばない）。台本はこの後の工程（Gemini）で作る。"""
 import argparse
 import json
 import os
@@ -189,7 +189,7 @@ def is_x_url(url):
 
 def pick_from_feed(items, call=None, now=None, report=None, judge='openrouter'):
     """RSSの新着からトレンドを分析させ、話題を1つ選ばせる。選ぶ価値が無ければ None を返す。
-    既定は OpenCode の無料モデル（judge='opencode'）。report（dict）を渡すと、分析結果を書き込む。
+    既定は Jev（judge='openrouter'）。report（dict）を渡すと、分析結果を書き込む。
     根拠は新着の一覧にあるURLだけを使う（一覧にないURLは捨てる）。"""
     if call is None:
         call = {'gemini': judge_with_gemini, 'opencode': judge_with_opencode,
@@ -219,7 +219,12 @@ def pick_from_feed(items, call=None, now=None, report=None, judge='openrouter'):
             report['reason'] = 'Web の根拠が2件そろわないため、今回は作らない'
         return None
     result['sources'] = news
-    return valid_topic(result)
+    try:
+        return valid_topic(result)
+    except ValueError as error:  # 話題の長さなど。実行を止めず、今回は作らないと記録する
+        if report is not None:
+            report['reason'] = str(error)
+        return None
 
 
 def jobs_today(state, now):

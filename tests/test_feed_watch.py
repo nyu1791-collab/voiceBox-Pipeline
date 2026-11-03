@@ -201,6 +201,16 @@ class FeedTopicTests(unittest.TestCase):
             {'url': 'https://example.com/1', 'title': 'a'}, {'url': 'https://example.org/2', 'title': 'b'}]})
         self.assertEqual(picked, ('新モデル', ['https://example.com/1', 'https://example.org/2']))
 
+    def test_a_topic_that_is_too_long_is_skipped_not_a_crash(self):
+        items = [{'feed': 'a', 'category': 'ゲーム', 'title': 'x', 'url': 'https://example.com/1'},
+                 {'feed': 'b', 'category': 'ゲーム', 'title': 'y', 'url': 'https://example.com/2'}]
+        report = {}
+        picked = auto_topic.pick_from_feed(items, report=report, call=lambda p: {
+            'trends': [], 'skip': False, 'topic': 'あ' * 61, 'sources': [
+                {'url': 'https://example.com/1', 'title': 'a'}, {'url': 'https://example.com/2', 'title': 'b'}]})
+        self.assertIsNone(picked)
+        self.assertIn('話題', report['reason'])
+
     def test_feed_prompt_groups_items_by_category(self):
         items = [{'feed': 'a', 'category': 'ゲーム', 'title': '新作発表', 'url': 'https://example.com/g'},
                  {'feed': 'b', 'category': 'IT・AI', 'title': '新モデル', 'url': 'https://example.com/i'},
