@@ -107,6 +107,9 @@
     {"id": "kantei", "type": "rss", "url": "https://www.kantei.go.jp/index-jnews.rdf", "category": "政府・公的"},
     {"id": "mhlw", "type": "rss", "url": "https://www.mhlw.go.jp/stf/news.rdf", "category": "政府・公的"},
     {"id": "lifehacker-jp", "type": "rss", "url": "https://www.lifehacker.jp/feed/index.xml", "category": "暮らし"},
-    {"id": "x-openai", "type": "x_api", "user": "OpenAI", "category": "X（公式）"}
+    {"id": "x-openai", "type": "x_api", "user": "OpenAI", "category": "X（公式）"},
+    {"id": "x-anthropic", "type": "x_api", "user": "AnthropicAI", "category": "X（公式）"},
+    {"id": "x-claude", "type": "x_api", "user": "claudeai", "category": "X（公式）"},
+    {"id": "x-google-deepmind", "type": "x_api", "user": "GoogleDeepMind", "category": "X（公式）"}
   ]
 }
