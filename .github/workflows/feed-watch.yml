@@ -58,14 +58,17 @@ jobs:
         run: |
           mkdir -p "$RUNNER_TEMP/out/jobs"
           python tools/feed_watch.py --state feed-state.json --out "$RUNNER_TEMP/out/new-items.json"
-      - name: Let Gemini analyze the trends and choose a topic
+      - name: Install the verified OpenCode CLI (free model judge)
+        if: steps.feeds.outputs.new_count != '0'
+        run: npm install --global opencode-ai@1.19.0
+      - name: Let OpenCode (free model) analyze the trends and choose a topic
         if: steps.feeds.outputs.new_count != '0'
         env:
-          GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
-          VOICEBOX_GEMINI_ROUTE: api_key   # 既定の vertex は、この実行では設定していないため使わない
+          OPENCODE_API_KEY: ${{ secrets.OPENCODE_API_KEY }}
         run: |
           python tools/auto_topic.py --jobs "$RUNNER_TEMP/out/jobs" --candidates "$RUNNER_TEMP/out/new-items.json" \
-            --state feed-state.json --daily-max "${{ vars.FEED_DAILY_MAX || 3 }}" --report "$RUNNER_TEMP/out/trends.json"
+            --state feed-state.json --daily-max "${{ vars.FEED_DAILY_MAX || 3 }}" --report "$RUNNER_TEMP/out/trends.json" \
+            --judge opencode
       - name: Make the research request (no paid call)
         if: steps.feeds.outputs.new_count != '0'
         run: |
@@ -73,7 +76,15 @@ jobs:
             [ -e "$job" ] || continue
             python tools/video_job.py plan --job "$job" --out "$RUNNER_TEMP/out/run-$(basename "$job" .json)"
           done
-      - name: Keep the trend report, new items and jobs (14 days)
+      - name: Download the images and videos of the chosen sources (kept in the runner only)
+        if: steps.feeds.outputs.new_count != '0'
+        run: |
+          for job in "$RUNNER_TEMP"/out/jobs/*.json; do
+            [ -e "$job" ] || continue
+            id=$(basename "$job" .json)
+            python tools/feed_media.py fetch --job "$job" --items "$RUNNER_TEMP/out/new-items.json" --out "$RUNNER_TEMP/media/$id"
+          done
+      - name: Keep the trend report, new items and jobs (14 days; media is never uploaded)
         if: always() && steps.feeds.outputs.new_count != '0'
         uses: actions/upload-artifact@v4
         with:
@@ -81,6 +92,14 @@ jobs:
           path: ${{ runner.temp }}/out
           retention-days: 14
           if-no-files-found: ignore
+      - name: Discard the downloaded media (the runner is deleted after this run anyway)
+        if: always()
+        run: |
+          for dir in "$RUNNER_TEMP"/media/*/; do
+            [ -d "$dir" ] || continue
+            python tools/feed_media.py discard --out "${dir%/}"
+          done
+          rm -rf "$RUNNER_TEMP/media"
       - name: Save the read-items record
         if: always()
         uses: actions/cache/save@v4

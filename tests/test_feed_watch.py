@@ -67,6 +67,21 @@ class FeedWatchTests(unittest.TestCase):
         self.assertIn('hub', errors)
 
 
+class MediaTests(unittest.TestCase):
+    def test_enclosures_thumbnails_and_inline_images_are_found(self):
+        from tools.feed_watch import media_of
+        entry = {'enclosures': [{'href': 'https://example.com/v.mp4', 'type': 'video/mp4'}],
+                 'media_thumbnail': [{'url': 'https://example.com/t.png'}]}
+        found = media_of(entry, '<img src="https://example.com/p.jpg"> <img src="http://insecure.example/x.png">')
+        self.assertEqual(found, [{'url': 'https://example.com/v.mp4', 'kind': 'video'},
+                                 {'url': 'https://example.com/t.png', 'kind': 'image'},
+                                 {'url': 'https://example.com/p.jpg', 'kind': 'image'}])
+
+    def test_items_without_media_have_an_empty_list(self):
+        items = feed_watch.read_rss({'id': 'f', 'url': 'u'}, 5, get=lambda url: RSS)
+        self.assertEqual([it['media'] for it in items], [[], []])
+
+
 class FeedTopicTests(unittest.TestCase):
     ITEMS = [{'feed': 'f', 'title': '新モデル発表', 'url': 'https://example.com/1', 'summary': '概要'}]
 
@@ -81,7 +96,8 @@ class FeedTopicTests(unittest.TestCase):
         self.assertIsNone(picked)
 
     def test_picked_topic_is_validated(self):
-        picked = auto_topic.pick_from_feed(self.ITEMS, call=lambda p: {'skip': False, 'topic': '新モデル', 'sources': [
+        items = self.ITEMS + [{'feed': 'g', 'category': 'IT・AI', 'title': 'b', 'url': 'https://example.org/2'}]
+        picked = auto_topic.pick_from_feed(items, call=lambda p: {'skip': False, 'topic': '新モデル', 'sources': [
             {'url': 'https://example.com/1', 'title': 'a'}, {'url': 'https://example.org/2', 'title': 'b'}]})
         self.assertEqual(picked, ('新モデル', ['https://example.com/1', 'https://example.org/2']))
 
@@ -104,6 +120,28 @@ class FeedTopicTests(unittest.TestCase):
         self.assertEqual(report['trends'], trends)
         self.assertTrue(report['skip'])
         self.assertEqual(report['item_count'], 1)
+
+    def test_judge_sources_must_come_from_the_listed_items(self):
+        items = [{'feed': 'a', 'category': 'ゲーム', 'title': 'x', 'url': 'https://example.com/1'},
+                 {'feed': 'b', 'category': 'ゲーム', 'title': 'y', 'url': 'https://example.com/2'}]
+        picked = auto_topic.pick_from_feed(items, call=lambda p: {
+            'trends': [], 'skip': False, 'topic': '話題', 'sources': [
+                {'url': 'https://invented.example.org/9', 'title': 'x'}, {'url': 'https://example.com/1', 'title': 'a'},
+                {'url': 'https://example.com/2', 'title': 'b'}]})
+        self.assertEqual(picked, ('話題', ['https://example.com/1', 'https://example.com/2']))
+
+    def test_short_sources_are_filled_from_the_trend_urls(self):
+        items = [{'feed': 'a', 'category': 'ゲーム', 'title': 'x', 'url': 'https://example.com/1'},
+                 {'feed': 'b', 'category': 'ゲーム', 'title': 'y', 'url': 'https://example.com/2'}]
+        picked = auto_topic.pick_from_feed(items, call=lambda p: {
+            'trends': [{'topic': 't', 'categories': [], 'source_count': 2, 'why': '', 'urls': [
+                'https://example.com/2', 'https://example.com/1']}],
+            'skip': False, 'topic': '話題', 'sources': [{'url': 'https://example.com/1', 'title': 'a'}]})
+        self.assertEqual(picked[1], ['https://example.com/1', 'https://example.com/2'])
+
+    def test_judge_is_opencode_by_default(self):
+        import inspect
+        self.assertEqual(inspect.signature(auto_topic.pick_from_feed).parameters['judge'].default, 'opencode')
 
     def test_items_carry_their_category(self):
         items = feed_watch.read_rss({'id': 'f', 'url': 'u', 'category': '科学'}, 5, get=lambda url: RSS)
