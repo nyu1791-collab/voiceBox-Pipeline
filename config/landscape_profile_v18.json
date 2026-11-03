@@ -168,8 +168,8 @@
     "bar_now": "#2B6146"
   },
   "output": {
-    "width": 640,
-    "height": 360
+    "width": 1280,
+    "height": 720
   },
   "profile_id": "zundamon-cpu-v1-from-v18"
 }
