@@ -8,6 +8,7 @@ Xのページは撮らない（Xの決まりとrobots.txtに従う）。カー�
 """
 import argparse
 import base64
+import hashlib
 import html
 import json
 import sys
@@ -115,7 +116,6 @@ def make_card(job, items, media_dir, session=None):
 def record_card(media_dir, post, path):
     manifest_path = Path(media_dir) / 'manifest.json'
     manifest = json.loads(manifest_path.read_text(encoding='utf-8')) if manifest_path.exists() else {'files': []}
-    import hashlib
     data = Path(path).read_bytes()
     manifest.setdefault('files', []).append({
         'file': Path(path).name, 'source_url': post.get('url'), 'media_url': None, 'kind': 'card',

@@ -1,4 +1,5 @@
-"""RSSと RSSHub の経路を見て、前回から増えた記事だけを書き出す（feed-watch.yml から8時間ごとに呼ぶ）。
+"""RSS・RSSHub の経路・X（公式APIの自分の投稿）を見て、前回から増えた記事だけを書き出す。
+feed-watch.yml から8時間ごとに呼ぶ。
 既読の記録（state）が無い最初の実行では、今ある記事を既読にするだけで新着として出さない。
   python tools/feed_watch.py --config config/feeds.json --state feed-state.json --out new-items.json
 RSSHub の経路は Node の rsshub パッケージで取得する（--rsshub-dir にインストール先を渡す）。費用はかからない。"""
@@ -22,7 +23,7 @@ ROOT = Path(__file__).resolve().parents[1]
 UA = 'voiceBox-feed-watch/1.0 (+https://github.com/nyu1791-collab/voiceBox-Pipeline)'
 KEEP_DAYS = 21
 SUMMARY_LIMIT = 400
-OUT_LIMIT = 1200  # 105の情報源を8時間ごとに見る
+OUT_LIMIT = 1200  # 1回の実行で判断に渡す新着の上限（超えた分はログに出す）
 
 
 def item_id(link, guid=''):
@@ -276,6 +277,8 @@ def main():
 
     fresh, first_run = select_new(items, state, now)
     save_state(args.state, state)
+    if len(fresh) > OUT_LIMIT:
+        print(f'新着 {len(fresh)} 件のうち {len(fresh) - OUT_LIMIT} 件は、上限のため判断に渡さなかった')
     fresh = fresh[:OUT_LIMIT]
     args.out.write_text(json.dumps({'checked_at': now.isoformat(timespec='seconds'), 'items': fresh,
                                     'errors': errors}, ensure_ascii=False, indent=2) + '\n', encoding='utf-8')
