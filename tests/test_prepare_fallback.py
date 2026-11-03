@@ -77,7 +77,8 @@ class PreparationFallbackTest(unittest.TestCase):
             result = prepare(request, output, script)
             project = json.loads((output / 'project.json').read_text())
         self.assertEqual(result['capture_failures'], ['a', 'b'])
-        self.assertEqual(project['visuals'][0]['capture_kind'], 'page_playback_blocked')
+        self.assertEqual(project['visuals'][0]['capture_kind'], 'neutral_background')
+        self.assertEqual(result['screenshots'], 0)
 
 
 if __name__ == '__main__':

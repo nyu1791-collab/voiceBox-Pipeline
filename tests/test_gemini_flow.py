@@ -18,7 +18,7 @@ class GeminiFlowTest(unittest.TestCase):
     def test_auth_failure_is_not_retried(self):
         from gemini_workflow import call_gemini
         error = HTTPError('https://example.test', 401, 'unauthorized', {}, None)
-        with patch.dict(os.environ, {'GEMINI_API_KEY': 'fixture'}), \
+        with patch.dict(os.environ, {'GEMINI_API_KEY': 'fixture', 'VOICEBOX_GEMINI_ROUTE': 'api_key'}), \
              patch('gemini_workflow.urlopen', side_effect=error) as send:
             with self.assertRaisesRegex(RuntimeError, 'HTTP 401'):
                 call_gemini('example', [], system='test')
@@ -28,7 +28,7 @@ class GeminiFlowTest(unittest.TestCase):
         from gemini_workflow import call_gemini
         error = HTTPError('https://example.test', 429, 'busy', {}, None)
         response = {'candidates': [{'content': {'parts': [{'text': '{"ok": true}'}]}}]}
-        with patch.dict(os.environ, {'GEMINI_API_KEY': 'fixture'}), \
+        with patch.dict(os.environ, {'GEMINI_API_KEY': 'fixture', 'VOICEBOX_GEMINI_ROUTE': 'api_key'}), \
              patch('gemini_workflow.urlopen', side_effect=[error, io.BytesIO(json.dumps(response).encode())]) as send, \
              patch('gemini_workflow.time.sleep'):
             result, _ = call_gemini('example', [], system='test')
@@ -102,6 +102,7 @@ class GeminiFlowTest(unittest.TestCase):
                     name = target['id'] + '.png'
                     Image.new('RGB', (100, 70), 'white').save(outdir / name)
                     row['files'] = [{'path': name, 'sha256': 'fixture'}]
+                    row['crops'] = [{'name': 'main', 'file': name, 'sha256': 'fixture', 'found': True}]
                 result.append(row)
             return result
 
@@ -114,7 +115,7 @@ class GeminiFlowTest(unittest.TestCase):
                     'source_credit': '関連画像の出典', 'capture_kind': 'related_image'}], 'errors': []}
 
         with tempfile.TemporaryDirectory() as directory, \
-             patch.dict(os.environ, {'GEMINI_API_KEY': 'fixture'}), \
+             patch.dict(os.environ, {'GEMINI_API_KEY': 'fixture', 'VOICEBOX_GEMINI_ROUTE': 'api_key'}), \
              patch('gemini_workflow.urlopen', side_effect=call), \
              patch('tools.prepare_project.capture_targets', side_effect=capture), \
              patch('tools.prepare_project.collect_related_images', side_effect=images):
@@ -143,6 +144,10 @@ class GeminiFlowTest(unittest.TestCase):
         lines = schema['properties']['lines']['items']
         self.assertIn('visual_id', lines['required'])
         self.assertIn('img-reference', lines['properties']['visual_id']['enum'])
+        self.assertIn('topic', lines['properties'])
+        self.assertIn('focus_area', lines['properties'])
+        self.assertIn('motion', lines['properties'])
+        self.assertIn('diagram_steps', lines['properties'])
         self.assertTrue(any(part.get('fileData', {}).get('fileUri') == video
                             for part in requests[1]['contents'][0]['parts']))
         self.assertEqual(sum('inlineData' in part for part in requests[1]['contents'][0]['parts']), 3)

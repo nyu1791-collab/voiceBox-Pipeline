@@ -13,7 +13,8 @@ import time
 import urllib.parse
 import urllib.request
 
-WORKERS = 10
+GPU_MODE = os.environ.get('VOICEBOX_DEVICE', 'cpu') == 'cuda'
+WORKERS = 1 if GPU_MODE else 10
 
 
 def engine_fingerprint_cache(directory):
@@ -102,8 +103,8 @@ class EnginePool:
         self.inflight = 0
         self.max_inflight = 0
         self.events = []
-        self.report = {"device": "cpu", "workers": WORKERS,
-                       "cpu_threads_per_engine": 1, "gpu_used": False}
+        self.report = {"device": "cuda" if GPU_MODE else "cpu", "workers": WORKERS,
+                       "cpu_threads_per_engine": 1, "gpu_used": GPU_MODE}
 
     def request(self, worker, route, parameters=None, body=None):
         url = f"http://127.0.0.1:{self.base_port + worker}/{route}"
@@ -142,15 +143,18 @@ class EnginePool:
         finally:
             for sock in reservations:
                 sock.close()
-        environment = dict(os.environ, CUDA_VISIBLE_DEVICES="-1", HIP_VISIBLE_DEVICES="-1",
-                           OMP_NUM_THREADS="1", OPENBLAS_NUM_THREADS="1",
+        environment = dict(os.environ, OMP_NUM_THREADS="1", OPENBLAS_NUM_THREADS="1",
                            MKL_NUM_THREADS="1", VV_CPU_NUM_THREADS="1")
+        if not GPU_MODE:
+            environment.update(CUDA_VISIBLE_DEVICES="-1", HIP_VISIBLE_DEVICES="-1")
         try:
             for worker in range(WORKERS):
                 command = [str(engine_executable(self.directory)), "--host", "127.0.0.1",
                            "--port", str(self.base_port + worker),
                            "--voicevox_dir", str(self.directory),
                            "--cpu_num_threads", "1", "--disable_mutable_api", "--output_log_utf8"]
+                if GPU_MODE:
+                    command.append('--use_gpu')
                 handle = (self.logs / f"engine-{worker:02d}.log").open("wb")
                 self.handles.append(handle)
                 self.processes.append(subprocess.Popen(command, cwd=self.directory,

@@ -112,10 +112,6 @@ def prepare(request, output, script=None, *, allow_api=False, executable_path=No
             (c for c in capture.get('crops', []) if c.get('found')), None)
         if capture.get('error') or not crop or any(not c.get('found') for c in requested):
             failures.append(source['id'])
-        if not crop and capture.get('files'):
-            original = capture['files'][0]
-            crop = {'name': 'page', 'file': original['path'], 'sha256': original['sha256'],
-                    'kind': 'page_playback_blocked' if capture.get('playback_blocked') else 'page'}
         if not crop:
             continue
         # Keep the original source ID as the backwards-compatible default image.
@@ -202,10 +198,6 @@ def prepare_gemini(request, output, started, *, executable_path=None):
         found = [crop for crop in capture.get('crops', []) if crop.get('found')]
         preferred = next((crop for crop in found if crop['name'] != 'article'), None)
         preferred = preferred or next(iter(found), None)
-        if not preferred and capture.get('files'):
-            original = capture['files'][0]
-            preferred = {'name': 'page', 'file': original['path'], 'sha256': original['sha256'],
-                         'kind': 'page_playback_blocked' if capture.get('playback_blocked') else 'page'}
         if not preferred:
             failures.append({'id': source['id'], 'error': capture.get('error', 'capture unavailable')})
             continue
@@ -246,10 +238,13 @@ def prepare_gemini(request, output, started, *, executable_path=None):
         if line.get('visual_id') in visual_ids:
             line['visual'] = line['visual_id']
             line['visual_context_only'] = line['visual_id'] != line.get('source_id')
+        elif line.get('source_id') in captured and not captured[line['source_id']].get('is_youtube'):
+            line['visual'] = line['source_id']
+            line['visual_context_only'] = False
         assignment = assignments.get(line['id'])
         if assignment and line.get('source_id') == assignment[0]:
             line['visual'] = assignment[1]
-    if related and not any(line['visual'] in image_ids for line in project['lines']):
+    if related and not captured and not any(line['visual'] in image_ids for line in project['lines']):
         project['lines'][0]['visual'] = related[0]['id']
         project['lines'][0]['visual_context_only'] = True
     # Rights and grounding checks: rejected images never reach the video, and findings are kept for review.
@@ -265,9 +260,22 @@ def prepare_gemini(request, output, started, *, executable_path=None):
         shown.append(neutral_visual(output))
     shown_ids = {visual['id'] for visual in shown}
     for line in project['lines']:
-        if line.get('visual') not in shown_ids:
+        target_visual = line.get('visual')
+        gemini_chosen = line.get('visual_id')
+        if target_visual not in shown_ids:
             line['visual'] = shown[0]['id']
             line['visual_context_only'] = True
+            if gemini_chosen:
+                line['cue_fallback_reason'] = f"visual_replaced_from_{gemini_chosen}_to_{shown[0]['id']}"
+                line.pop('focus_area', None)
+                line['motion'] = 'static'
+                line.pop('diagram_steps', None)
+        elif gemini_chosen and gemini_chosen != target_visual:
+            # Gemini-specified coordinates belong to gemini_chosen, not target_visual
+            line['cue_fallback_reason'] = f"visual_mismatch_from_{gemini_chosen}_to_{target_visual}"
+            line.pop('focus_area', None)
+            line['motion'] = 'static'
+            line.pop('diagram_steps', None)
     unsupported_numbers, conflicting_counts = numeric_checks(project['lines'], pack['sources'])
     project['visuals'] = shown
     project['source_references'] = source_references(pack['sources'])

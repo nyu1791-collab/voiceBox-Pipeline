@@ -107,6 +107,12 @@ async def capture_targets(targets, outdir, playwright_factory=None, *, executabl
         grouped.setdefault(target['url'], []).append(target)
     manifest = []
     async with playwright_factory() as p:
+        # On Windows use installed Edge only if Playwright's own Chromium is absent.
+        if executable_path is None and os.name == 'nt':
+            bundled = Path(p.chromium.executable_path)
+            edge = Path(os.environ.get('PROGRAMFILES(X86)', r'C:\Program Files (x86)')) / 'Microsoft/Edge/Application/msedge.exe'
+            if not bundled.is_file() and edge.is_file():
+                executable_path = str(edge)
         browser = await p.chromium.launch(executable_path=executable_path,
                                           headless=True, args=['--no-sandbox'])
         semaphore = asyncio.Semaphore(max(1, min(4, max_workers)))

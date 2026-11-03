@@ -13,6 +13,9 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 from contextlib import closing
 from media_editing import VideoPanels
 from evidence_translation import TranslationCards
+from dynamic_visuals import (parse_visual_cue, build_cue_timeline, held_cue_before,
+                            get_dynamic_cache_key, render_dynamic_visual_panel,
+                            draw_dynamic_source_label)
 from subtitle_tools import wrap_japanese, phrase_breaks, transcript_caption_at
 from motion_diagrams import bound_timeline, active_diagram, cache_state as motion_cache_state, render_panel as render_motion_panel
 import argparse, hashlib, json, math, re, signal, wave, time
@@ -422,6 +425,38 @@ def visual_motion(vis_t, perf):
     return 1.0,1.0
 
 
+def draw_animated_diagram(frame, layout, font_path, labels, elapsed):
+    """Reveal authored diagram steps in order; nothing is inferred from a source."""
+    if not isinstance(labels, list) or not 2 <= len(labels) <= 3:
+        raise ValueError('diagram_steps must contain two or three short labels')
+    if any(not isinstance(label, str) or not label or len(label) > 14 for label in labels):
+        raise ValueError('diagram label must be 1 to 14 characters')
+    x1,y1,x2,y2 = layout['zones']['evidence']
+    d = ImageDraw.Draw(frame)
+    d.rounded_rectangle((x1,y1,x2,y2), radius=22, fill='#F9FAF5', outline='#C9D5E3', width=2)
+    width = x2-x1
+    gap = 36
+    box_width = (width-64-gap*(len(labels)-1)) / len(labels)
+    cy = (y1+y2)/2
+    for i,label in enumerate(labels):
+        progress = min(1.0, max(0.0, (elapsed-i*1.15)/0.6))
+        if progress <= 0:
+            continue
+        offset = round(20*(1-progress))
+        left = round(x1+32+i*(box_width+gap))
+        right = round(left+box_width)
+        top,bottom = round(cy-45+offset),round(cy+45+offset)
+        d.rounded_rectangle((left,top,right,bottom), radius=16, fill=('#CFE9DB','#F7DBBD','#D5E2F8')[i], outline='#475F55', width=3)
+        face = _font(str(font_path), 30)
+        while face.getlength(label) > box_width-16 and face.size > 18:
+            face = _font(str(font_path), face.size-2)
+        d.text(((left+right)/2,(top+bottom)/2), label, font=face, fill='#17342A', anchor='mm')
+        if i:
+            ay = round(cy)
+            d.line((left-gap+7,ay,left-11,ay),fill='#476C5D',width=5)
+            d.polygon(((left-11,ay-9),(left-11,ay+9),(left,ay)),fill='#476C5D')
+
+
 def chapter_card_at(cards, t_abs):
     """全編の時刻 t_abs にある章カード。カードの外なら None。"""
     for c in cards:
@@ -660,6 +695,7 @@ def render(args):
     caption_font=ImageFont.truetype(str(args.font),layout["caption_font_size"])
     label_font=ImageFont.truetype(str(args.font),int(layout.get("source_label_font_size",12)))
     _src_label={v["id"]:v.get("source_label") for v in (presentation.get("visuals") or [])}
+    _diagram_steps={v['id']:v.get('diagram_steps') for v in (presentation.get('visuals') or []) if v.get('diagram_steps')}
     label_width=int(layout.get("source_label_max_px",700))
     for visual_id, label in _src_label.items():
         if not label or label_font.getlength(label) <= label_width:
@@ -669,19 +705,38 @@ def render(args):
             shortened=shortened[:-1]
         if shortened != label:
             _src_label[visual_id]=shortened + "…"
+
+    visual_src_map = {}
+    for item in (presentation.get("visuals") or []):
+        src = Path(item["file"])
+        if not src.is_absolute():
+            src = args.presentation.parent / src
+        visual_src_map[item["id"]] = src
+    if getattr(args, "visual", None):
+        visual_src_map.setdefault(default_visual, Path(args.visual))
+
+    all_records = timing.get("records", [])
+    all_cues = build_cue_timeline(all_records)
+    cue_by_id = {r["id"]: c for r, c in zip(all_records, all_cues)}
+    parsed_cues = [cue_by_id.get(r["id"], parse_visual_cue(r)) for r in records]
+
     small=ImageFont.truetype(str(args.font),layout["source_font_size"])
     _band_font=ImageFont.truetype(str(args.font),int(layout.get("band_font_size",20)))  # v11：見出しの帯と訳の帯
     _cards_l=[(c["start"]-args.start,c["end"]-args.start) for c in (presentation.get("chapter_cards") or [])]
     _secname={x["id"]:x.get("heading") for x in (presentation.get("sections") or [])}
     _sw=[]; _prev=None
-    for r0 in sorted(records,key=lambda x:x["start"]):  # 画像の切り替えの一覧（章カードの中なら、カードの終わり）
-        if _prev is not None and r0.get("visual_id")!=_prev.get("visual_id"):
+    for r0_idx, r0 in enumerate(sorted(records,key=lambda x:x["start"])):  # 画像や注目点の切り替えの一覧
+        r0_cue = parsed_cues[r0_idx] if r0_idx < len(parsed_cues) else {}
+        cue_changed = bool(_prev and r0_cue.get("is_custom") and (
+            r0_cue.get("topic") != _prev.get("topic") or r0_cue.get("box") != _prev.get("box")
+        ))
+        if _prev is not None and (r0.get("visual_id") != _prev.get("visual_id") or cue_changed):
             st=r0["start"]; card=False
             for s0,s1 in _cards_l:
                 if s0<=st<s1: st=s1; card=True
             head=_secname.get(r0.get("scene_id")) if r0.get("scene_id")!=(_prev or {}).get("scene_id") else None
             _sw.append((st,head,card))
-        _prev=r0
+        _prev={**r0, **r0_cue}
     out=args.output; out.parent.mkdir(parents=True,exist_ok=True)
     audio_fast=profile.get("audio_fast_path") or {}
     gain_db=float(audio_fast.get("fixed_gain_db",0.0))
@@ -689,8 +744,13 @@ def render(args):
     audio_filter=f"volume={gain_db}dB,alimiter=limit={limiter}:level=disabled" if gain_db else f"alimiter=limit={limiter}:level=disabled"  # FIX v1.4: alimiter level=1 raised loudness by ~8 dB
     _RATE=(["-crf",os.environ["OUT_CRF"]] if os.environ.get("OUT_CRF") else ["-b:v","144k","-maxrate","168k","-bufsize","288k"])  # v10：画質は CRF で指定できる（既定は従来の 144 kbps）
     if getattr(args, "video_only", False) and os.environ.get("DIRECT_ENCODE")=="1":  # 一本の直接符号化：中間の yuv を書かない（音声は後で付ける）
+        _ENCODER = os.environ.get('OUT_ENCODER', 'libx264')
+        if _ENCODER not in ('libx264', 'h264_nvenc'):
+            raise ValueError('Unsupported final encoder')
+        if _ENCODER == 'h264_nvenc':
+            _RATE = ['-rc', 'vbr', '-cq', os.environ.get('OUT_CRF', '20'), '-b:v', '0']
         cmd=["ffmpeg","-v","error","-y","-f","rawvideo","-pix_fmt","rgb24","-s",f"{W}x{H}","-r",str(FPS),"-i","pipe:0",
-             "-vf",os.environ.get("OUT_VF","scale=640:360:flags=lanczos"),"-c:v","libx264","-preset",os.environ.get("OUT_PRESET","ultrafast"),"-threads",os.environ.get("DIRECT_THREADS","8"),  # 1 で再現する（8 だと実行ごとに映像が変わる。描画時間は同じ）
+             "-vf",os.environ.get("OUT_VF","scale=640:360:flags=lanczos"),"-c:v",_ENCODER,"-preset",os.environ.get("OUT_PRESET","ultrafast"),"-threads",os.environ.get("DIRECT_THREADS","8"),
              *_RATE,"-pix_fmt","yuv420p","-an",str(out)]
     elif getattr(args, "video_only", False):  # 区間の描画（v20）：映像だけ。切れ目は鍵フレーム（連結は -c copy）
         cmd=["ffmpeg","-v","error","-y","-f","rawvideo","-pix_fmt","rgb24","-s",f"{W}x{H}","-r",str(FPS),"-i","pipe:0",
@@ -715,11 +775,12 @@ def render(args):
         cache_hits=0; cache_misses=0
         panel_cache=OrderedDict(); cards_drawn=0
         current_visual=(records[0].get("visual_id",default_visual) if layered else default_visual)
-        if layered and args.start>0:  # 区間の途中から（v20）：場面の入りは全編の時刻で数える
+        if args.start>0:  # 区間の途中から：場面の入りは全編の時刻で数える
             current_visual,_st=visual_origin(timing["records"],args.start,default_visual)
             visual_started=_st-args.start
         record_idx=0
         mouth=0
+        last_active_cue, last_active_dur = held_cue_before(all_records, all_cues, args.start)
         if args.start>0:  # 区間の先頭の口の状態は、直前の更新時刻（全編の時刻）の値を使う（一本の描画と一致させる）
             _k0=(int(round(args.start*FPS))//mouth_step)*mouth_step
             _c0=samples[int((_k0/FPS)*rate):int((_k0/FPS+acting["window_seconds"])*rate)]
@@ -778,8 +839,28 @@ def render(args):
                 mouth_seen[name].add(state); expr_seen[name].add(expr)
                 char_states.append((name,side,active,state,expr))
 
+            if r:
+                r_cue = parsed_cues[record_idx] if record_idx < len(parsed_cues) else {}
+                r_elapsed = t - r["start"]
+                r_dur = r["end"] - r["start"]
+                last_active_cue = r_cue
+                last_active_dur = r_dur
+            elif last_active_cue is not None:
+                r_cue = last_active_cue
+                r_dur = last_active_dur
+                r_elapsed = r_dur
+            else:
+                r_cue = {}
+                r_elapsed = 0.0
+                r_dur = 1.0
+
+            is_dynamic = bool(r_cue and r_cue.get("is_custom"))
+
             if layered:
-                _ms,_ma=visual_motion(t-visual_started,perf_cfg)
+                if is_dynamic:
+                    _ms, _ma = 1.0, 1.0  # 演出指定のある場面に無関係な定期nudgeを二重適用しない
+                else:
+                    _ms,_ma=visual_motion(t-visual_started,perf_cfg)
                 beat_key=(current_visual,_ms,_ma)
             else:
                 _beat=int((t-visual_started)//beat_s)
@@ -790,9 +871,12 @@ def render(args):
             sb_scene=last_sb_scene if sidebar_state else None
             sb_pose=sidebar_pose(t+args.start,sb_scene) if sb_scene is not None else None
             translation_state = translation_cards.state(current_visual, t-r["start"] if r else 0, r["end"]-r["start"] if r else 1)
-            frame_key=(translation_state,beat_key,speaker,expression,mouth,caption,tuple((x[0],x[2],x[3],x[4]) for x in char_states),bump,sb_scene,sb_pose)
+            dyn_cache = get_dynamic_cache_key(r_cue, r_elapsed, r_dur, FPS) if is_dynamic else ()
+            frame_key=(translation_state,beat_key,speaker,expression,mouth,caption,tuple((x[0],x[2],x[3],x[4]) for x in char_states),bump,sb_scene,sb_pose,dyn_cache)
             frame_key += (motion_cache_state(motion_timeline,t+args.start,FPS),)
             if current_visual in video_panels.paths:
+                frame_key += (i,)
+            if current_visual in _diagram_steps:
                 frame_key += (i,)
             cached=frame_cache.get(frame_key)
             if cached is not None:
@@ -802,7 +886,21 @@ def render(args):
                 continue
 
             cache_misses += 1
-            if layered:
+            if is_dynamic and current_visual in visual_src_map and visual_src_map[current_visual].is_file():
+                ex1, ey1, ex2, ey2 = layout["zones"]["evidence"]
+                pw, ph = ex2 - ex1 + 1, ey2 - ey1 + 1
+                src_img = _src_rgb(str(visual_src_map[current_visual]))
+                dyn_panel = render_dynamic_visual_panel(
+                    src_img, pw, ph, r_cue, r_elapsed, r_dur, args.font,
+                    panel_bg_color=layout["evidence_panel"]
+                )
+                if layered:
+                    frame = layers[current_visual][0].copy()
+                else:
+                    frame = backgrounds[beat_key].copy()
+                frame.paste(dyn_panel, (ex1, ey1), dyn_panel)
+                d = ImageDraw.Draw(frame)
+            elif layered:
                 frame=layers[current_visual][0].copy()
                 _pimg,_pxy=panel_for(layers,current_visual,beat_key[1],beat_key[2],panel_cache)
                 video_frame = video_panels.frame(current_visual, t-visual_started)
@@ -817,6 +915,9 @@ def render(args):
                 frame.paste(_pimg,_pxy,_pimg); d=ImageDraw.Draw(frame)
             else:
                 frame=backgrounds[beat_key].copy(); d=ImageDraw.Draw(frame)
+            if current_visual in _diagram_steps:
+                draw_animated_diagram(frame, layout, args.font, _diagram_steps[current_visual], t-visual_started)
+                d=ImageDraw.Draw(frame)
             translation_cards.draw(frame, translation_state)
             motion = active_diagram(motion_timeline,t+args.start)
             if motion is not None and MOTION_TEXT_IN_VISUAL_SLOT:  # R69：図解の文字は枠に載せない
@@ -871,7 +972,10 @@ def render(args):
             if layout.get("source_label_enabled"):
                 _sl=_src_label.get(current_visual)
                 if not _sl: raise ValueError("source label missing for visual %s" % current_visual)
-                d.text((int(layout.get("source_label_right_x",1256)),int(layout.get("source_label_y",706))),_sl,font=label_font,fill=layout.get("source_label_color","#F2F6FA"),anchor="rm")  # 出典（RULES §3）
+                if is_dynamic:
+                    draw_dynamic_source_label(frame, _sl, args.font, layout['zones']['evidence'])
+                else:
+                    d.text((int(layout.get("source_label_right_x",1256)),int(layout.get("source_label_y",706))),_sl,font=label_font,fill=layout.get("source_label_color","#F2F6FA"),anchor="rm")  # 出典（RULES §3）
             if i==0:
                 for evidence in character_frame_evidence.values():
                     evidence["rgb_8x8"]=list(frame.crop(tuple(evidence["rect"])).convert("RGB").resize((8,8),Image.Resampling.BOX).tobytes())
@@ -894,6 +998,12 @@ def render(args):
       "voice_reused":True,"agenda_sidebar_scenes":(sorted(sidebar_seen) if sidebar_state else None),"one_final_encode":True,"visual_sha256":visual_hashes,"character_keys":char_keys,
       "audio_fast_path":{"gain_db":gain_db,"limiter_linear":limiter},
       "motion_diagrams":{"count":len(motion_timeline.get("diagrams",[])),"scope":"台詞同期の部品別図解。目視/聴感は別確認"},
+      "dynamic_visuals":{"cued_lines":sum(bool(c.get('is_custom')) for c in all_cues),
+                         "fallbacks":[{"line_id":r.get('id'),
+                                       "reason":r.get('cue_fallback_reason') or c.get('fallback_reason'),
+                                       "step_reason":c.get('step_fallback_reason')}
+                                      for r,c in zip(all_records,all_cues)
+                                      if r.get('cue_fallback_reason') or c.get('fallback_reason') or c.get('step_fallback_reason')]},
       "visual_motion":{"layered":layered,"entry_seconds":perf_cfg.get("visual_entry_seconds"),"nudge_every_seconds":perf_cfg.get("visual_beat_seconds"),"nudge_seconds":perf_cfg.get("visual_nudge_seconds"),"nudge_scale":perf_cfg.get("visual_nudge_scale")},
       "chapter_cards":{"count":len(chapter_cards),"frames_drawn":cards_drawn,"windows":[[c["start"],c["end"]] for c in chapter_cards]},
       "mouth_update_hz":mouth_hz,
