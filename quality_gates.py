@@ -6,8 +6,9 @@ preparation.json so the rendered video's inputs can be audited afterwards.
 import re
 from urllib.parse import urlsplit
 
-# Frames of other people's videos and playback-blocked pages are never shown.
-BLOCKED_CAPTURE_KINDS = {'youtube_frame', 'youtube_metadata', 'page_playback_blocked'}
+# Pages that failed to play are never shown. Frames of other people's videos are allowed with a source
+# credit since the user lifted that ban on 2026-11-03 (docs/VIDEO_PRODUCTION_STANDARD.md section 5).
+BLOCKED_CAPTURE_KINDS = {'youtube_metadata', 'page_playback_blocked'}
 PUBLIC_SUFFIXES = ('.go.jp', '.lg.jp')
 PUBLIC_HOST = re.compile(r'(^|\.)(pref|city|town|village|vill|police)[a-z0-9.-]*\.jp$')
 NUMBER = re.compile(r'\d[\d,]*(?:\.\d+)?')
@@ -19,7 +20,7 @@ def image_allowed(visual):
     """Return (allowed, reason) for one visual before it can appear in the video."""
     kind = visual.get('capture_kind', '')
     if kind in BLOCKED_CAPTURE_KINDS:
-        return False, 'third-party video or playback capture'
+        return False, 'page did not play'
     if kind == 'related_image':
         host = (urlsplit(visual.get('source_url', '')).hostname or '').lower()
         if host.endswith(PUBLIC_SUFFIXES) or PUBLIC_HOST.search(host):

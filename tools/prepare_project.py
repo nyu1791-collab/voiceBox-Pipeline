@@ -238,7 +238,8 @@ def prepare_gemini(request, output, started, *, executable_path=None):
         if line.get('visual_id') in visual_ids:
             line['visual'] = line['visual_id']
             line['visual_context_only'] = line['visual_id'] != line.get('source_id')
-        elif line.get('source_id') in captured and not captured[line['source_id']].get('is_youtube'):
+        # Other people's video frames may be shown since 2026-11-03; pages that did not play are still skipped.
+        elif line.get('source_id') in captured and not captured[line['source_id']].get('playback_blocked'):
             line['visual'] = line['source_id']
             line['visual_context_only'] = False
         assignment = assignments.get(line['id'])

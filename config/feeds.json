@@ -1,0 +1,15 @@
+{
+  "note": "feed-watch.yml が1時間ごとに見る情報源。rss はそのままのフィードURL、rsshub はRSSHubの経路（https://docs.rsshub.app/routes/）。追加・削除はこの一覧だけを編集する。",
+  "max_items_per_feed": 20,
+  "feeds": [
+    {"id": "nhk-main", "type": "rss", "url": "https://www3.nhk.or.jp/rss/news/cat0.xml"},
+    {"id": "itmedia-aiplus", "type": "rss", "url": "https://rss.itmedia.co.jp/rss/2.0/aiplus.xml"},
+    {"id": "publickey", "type": "rss", "url": "https://www.publickey1.jp/atom.xml"},
+    {"id": "gigazine", "type": "rss", "url": "https://gigazine.net/news/rss_2.0/"},
+    {"id": "digital-agency", "type": "rss", "url": "https://www.digital.go.jp/rss/news.xml"},
+    {"id": "openai-news", "type": "rss", "url": "https://openai.com/news/rss.xml"},
+    {"id": "google-ai-blog", "type": "rss", "url": "https://blog.google/technology/ai/rss/"},
+    {"id": "huggingface-blog", "type": "rss", "url": "https://huggingface.co/blog/feed.xml"},
+    {"id": "hackernews-best", "type": "rsshub", "route": "/hackernews/best"}
+  ]
+}
