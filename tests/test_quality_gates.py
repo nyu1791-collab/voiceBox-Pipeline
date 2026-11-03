@@ -7,10 +7,11 @@ from quality_gates import image_allowed, numeric_checks
 
 
 class ImageRightsGoalTest(unittest.TestCase):
-    def test_third_party_video_frames_are_not_shown(self):
-        allowed, _ = image_allowed({'capture_kind': 'youtube_frame',
-                                    'source_url': 'https://www.youtube.com/watch?v=x'})
-        self.assertFalse(allowed)
+    def test_third_party_video_frames_are_shown_with_credit_but_failed_playback_is_not(self):
+        allowed, reason = image_allowed({'capture_kind': 'youtube_frame',
+                                         'source_url': 'https://www.youtube.com/watch?v=x'})
+        self.assertTrue(allowed)
+        self.assertIn('credit', reason)
         allowed, _ = image_allowed({'capture_kind': 'page_playback_blocked',
                                     'source_url': 'https://www.youtube.com/shorts/x'})
         self.assertFalse(allowed)

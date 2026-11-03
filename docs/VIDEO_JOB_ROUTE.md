@@ -11,6 +11,14 @@
 5. **音声・描画（Colab GPU）** — 未接続。`colab/zundamon_gpu_pipeline.ipynb` と `tools/colab_gpu_run.py` は実機確認前の下書き（[COLAB_GPU_DRAFT.md](COLAB_GPU_DRAFT.md)）。素材を Colab へ渡す方法とGPU実行の確認が残っている。
 6. **YouTubeへ非公開で載せる** — `tools/youtube_upload.py`。既定は `private`。`public` は `--privacy public` を付けた時だけ。
 
+## RSSの新着から話題を選ぶ（feed-watch.yml、2026-11-03）
+
+- `.github/workflows/feed-watch.yml` が毎時23分に `config/feeds.json` のRSS・RSSHub経路を見る（`tools/feed_watch.py`）。既読の記録はActionsのキャッシュ `feed-state-*`。初回は今ある記事を既読にするだけ。
+- 新着があれば、Gemini（`auto_topic.py --candidates`）が新着を読み、動画にする価値がある話題を1つ選ぶ。無ければ選ばない。一覧の記事URLに加えて別の根拠を検索で探し、検索の転送用リンクは実際の出典URLに直す。1日の作成数は変数 `FEED_DAILY_MAX`（既定3）まで。
+- その後は video-auto.yml と同じく `video_job.py plan` まで（費用なし）。手順4以降の接続は video-auto と同じ未接続の状態。
+- 定期実行はリポジトリ変数 `FEED_WATCH_ENABLED` を `true` にした時だけ動く。video-auto と同じ並び（concurrency）なので同時には選ばない。
+- 確認済み: 単体テスト、actionlint、このPCでの実フィードの取得（9件・162記事）、新着8件からGeminiが話題を選びジョブを作るまで。
+
 ## 承認が必要な所
 
 - テーマの承認（手順1）と、動画の公開は別。公開は承認しない限り行わない。
