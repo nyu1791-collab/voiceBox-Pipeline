@@ -1,12 +1,13 @@
 name: feed-watch
 
-# 1時間ごとに config/feeds.json のRSS・RSSHub経路を見て、新着をGeminiに読ませ、動画にする話題があれば制作ジョブを作る。
+# 8時間ごとに config/feeds.json の約100の情報源（公式サイト・報道・ネットの話題・著名人の公式チャンネル）を見て、
+# 新着からGeminiがトレンドを分析し、人気が出そうな話題があれば制作ジョブを作る。分析結果は実行の Summary と Artifact に残す。
 # 定期実行は、リポジトリ変数 FEED_WATCH_ENABLED が true のときだけ動く（既定は止まっている）。手動実行はいつでも動く。
 # 既読の記録は Actions のキャッシュ（feed-state-*）に保存する。1日に作るジョブは FEED_DAILY_MAX（既定3）まで。
 # ジョブの後の工程は video-auto.yml と同じ（調査依頼まで。音声と書き出しは Colab GPU の段階で追加する。docs/VIDEO_JOB_ROUTE.md）。
 on:
   schedule:
-    - cron: "23 * * * *"   # 毎時23分（UTC・JSTとも同じ分）
+    - cron: "23 23,7,15 * * *"   # UTC。日本時間 08:23・16:23・00:23
   workflow_dispatch:
 permissions:
   contents: read
@@ -54,23 +55,32 @@ jobs:
         id: feeds
         env:
           RSSHUB_DIR: ${{ runner.temp }}/rsshub
-        run: python tools/feed_watch.py --state feed-state.json --out "$RUNNER_TEMP/new-items.json"
-      - name: Let Gemini read the new items and choose a topic
+        run: |
+          mkdir -p "$RUNNER_TEMP/out/jobs"
+          python tools/feed_watch.py --state feed-state.json --out "$RUNNER_TEMP/out/new-items.json"
+      - name: Let Gemini analyze the trends and choose a topic
         if: steps.feeds.outputs.new_count != '0'
         env:
           GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
           VOICEBOX_GEMINI_ROUTE: api_key   # 既定の vertex は、この実行では設定していないため使わない
         run: |
-          mkdir -p "$RUNNER_TEMP/jobs"
-          python tools/auto_topic.py --jobs "$RUNNER_TEMP/jobs" --candidates "$RUNNER_TEMP/new-items.json" \
-            --state feed-state.json --daily-max "${{ vars.FEED_DAILY_MAX || 3 }}"
+          python tools/auto_topic.py --jobs "$RUNNER_TEMP/out/jobs" --candidates "$RUNNER_TEMP/out/new-items.json" \
+            --state feed-state.json --daily-max "${{ vars.FEED_DAILY_MAX || 3 }}" --report "$RUNNER_TEMP/out/trends.json"
       - name: Make the research request (no paid call)
         if: steps.feeds.outputs.new_count != '0'
         run: |
-          for job in "$RUNNER_TEMP"/jobs/*.json; do
+          for job in "$RUNNER_TEMP"/out/jobs/*.json; do
             [ -e "$job" ] || continue
-            python tools/video_job.py plan --job "$job" --out "$RUNNER_TEMP/run-$(basename "$job" .json)"
+            python tools/video_job.py plan --job "$job" --out "$RUNNER_TEMP/out/run-$(basename "$job" .json)"
           done
+      - name: Keep the trend report, new items and jobs (14 days)
+        if: always() && steps.feeds.outputs.new_count != '0'
+        uses: actions/upload-artifact@v4
+        with:
+          name: feed-watch-${{ github.run_id }}
+          path: ${{ runner.temp }}/out
+          retention-days: 14
+          if-no-files-found: ignore
       - name: Save the read-items record
         if: always()
         uses: actions/cache/save@v4

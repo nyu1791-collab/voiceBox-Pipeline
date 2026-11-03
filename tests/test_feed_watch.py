@@ -85,6 +85,30 @@ class FeedTopicTests(unittest.TestCase):
             {'url': 'https://example.com/1', 'title': 'a'}, {'url': 'https://example.org/2', 'title': 'b'}]})
         self.assertEqual(picked, ('新モデル', ['https://example.com/1', 'https://example.org/2']))
 
+    def test_feed_prompt_groups_items_by_category(self):
+        items = [{'feed': 'a', 'category': 'ゲーム', 'title': '新作発表', 'url': 'https://example.com/g'},
+                 {'feed': 'b', 'category': 'IT・AI', 'title': '新モデル', 'url': 'https://example.com/i'},
+                 {'feed': 'c', 'category': 'ゲーム', 'title': '大型更新', 'url': 'https://example.com/h'}]
+        prompt = auto_topic.build_feed_prompt('2026-11-04', items)
+        self.assertIn('## ゲーム（2件）', prompt)
+        self.assertIn('## IT・AI（1件）', prompt)
+        self.assertIn('トレンドを最大5つ', prompt)
+
+    def test_trends_are_written_to_the_report_even_when_skipped(self):
+        trends = [{'topic': '新作ゲーム', 'categories': ['ゲーム'], 'source_count': 4, 'why': '各社が報道',
+                   'urls': ['https://example.com/g']}]
+        report = {}
+        picked = auto_topic.pick_from_feed(self.ITEMS, report=report, call=lambda p: {
+            'trends': trends, 'skip': True, 'topic': '', 'sources': []})
+        self.assertIsNone(picked)
+        self.assertEqual(report['trends'], trends)
+        self.assertTrue(report['skip'])
+        self.assertEqual(report['item_count'], 1)
+
+    def test_items_carry_their_category(self):
+        items = feed_watch.read_rss({'id': 'f', 'url': 'u', 'category': '科学'}, 5, get=lambda url: RSS)
+        self.assertEqual({it['category'] for it in items}, {'科学'})
+
     def test_search_redirects_become_publisher_urls(self):
         redirect = 'https://vertexaisearch.cloud.google.com/grounding-api-redirect/abc'
         urls = auto_topic.resolve_redirects(['https://example.com/1', redirect],

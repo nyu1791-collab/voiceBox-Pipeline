@@ -1,4 +1,4 @@
-"""RSSと RSSHub の経路を見て、前回から増えた記事だけを書き出す（feed-watch.yml から1時間ごとに呼ぶ）。
+"""RSSと RSSHub の経路を見て、前回から増えた記事だけを書き出す（feed-watch.yml から8時間ごとに呼ぶ）。
 既読の記録（state）が無い最初の実行では、今ある記事を既読にするだけで新着として出さない。
   python tools/feed_watch.py --config config/feeds.json --state feed-state.json --out new-items.json
 RSSHub の経路は Node の rsshub パッケージで取得する（--rsshub-dir にインストール先を渡す）。費用はかからない。"""
@@ -20,7 +20,7 @@ ROOT = Path(__file__).resolve().parents[1]
 UA = 'voiceBox-feed-watch/1.0 (+https://github.com/nyu1791-collab/voiceBox-Pipeline)'
 KEEP_DAYS = 21
 SUMMARY_LIMIT = 400
-OUT_LIMIT = 40
+OUT_LIMIT = 1200  # 105の情報源を8時間ごとに見る
 
 
 def item_id(link, guid=''):
@@ -47,7 +47,8 @@ def read_rss(feed, limit, get=fetch):
         link = entry.get('link', '')
         if not link.startswith('https://') and not link.startswith('http://'):
             continue
-        items.append({'feed': feed['id'], 'title': plain(entry.get('title', ''), 200), 'url': link,
+        items.append({'feed': feed['id'], 'category': feed.get('category', ''),
+                      'title': plain(entry.get('title', ''), 200), 'url': link,
                       'published': entry.get('published', entry.get('updated', '')),
                       'summary': plain(entry.get('summary', '')), 'id': item_id(link, entry.get('id', ''))})
     return items
@@ -88,7 +89,8 @@ def read_rsshub(feeds, limit, rsshub_dir):
         if result.get('error'):
             errors[feed['id']] = result['error'].get('message', '')[:300]
             continue
-        items[feed['id']] = [{'feed': feed['id'], 'title': plain(it.get('title', ''), 200), 'url': it.get('link', ''),
+        items[feed['id']] = [{'feed': feed['id'], 'category': feed.get('category', ''),
+                              'title': plain(it.get('title', ''), 200), 'url': it.get('link', ''),
                               'published': str(it.get('pubDate', '')), 'summary': plain(it.get('description', '')),
                               'id': item_id(it.get('link', ''), str(it.get('guid', '')))}
                              for it in (result.get('item') or [])[:limit] if it.get('link')]
