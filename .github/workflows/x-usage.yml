@@ -1,0 +1,20 @@
+name: x-usage
+
+# 手動だけ動く。X API の直近7日の読み取り件数と上限を表示する（鍵はログに出ない）。
+on:
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  usage:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Show the X API usage
+        env:
+          X_API_BEARER_TOKEN: ${{ secrets.X_API_BEARER_TOKEN }}
+        run: python tools/x_usage.py
