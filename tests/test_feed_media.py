@@ -56,6 +56,16 @@ class FetchTests(unittest.TestCase):
             self.assertTrue((Path(tmp) / 'media' / 'manifest.json').exists())
             self.assertEqual(len(manifest['files'][0]['sha256']), 64)
 
+    def test_every_file_carries_its_source_line(self):
+        session = FakeSession({'https://example.com/p.png': FakeResponse(),
+                               'https://example.com/v.mp4': FakeResponse(content_type='video/mp4')})
+        items = [dict(ITEMS[0], source='Example News')]
+        with tempfile.TemporaryDirectory() as tmp:
+            manifest = feed_media.fetch(JOB, items, Path(tmp) / 'media', session=session)
+        self.assertTrue(manifest['files'])
+        for entry in manifest['files']:
+            self.assertEqual(entry['credit'], '出典: Example News（https://example.com/a）')
+
     def test_wrong_type_size_and_status_are_skipped(self):
         items = [{'url': ARTICLE, 'media': [
             {'url': 'https://example.com/html', 'kind': 'image'},

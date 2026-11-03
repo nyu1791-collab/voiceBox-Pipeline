@@ -28,7 +28,7 @@ def build_html(post, picture_url=None):
     text = html.escape(post.get('summary') or post.get('title') or '')
     author = html.escape('@' + post['url'].split('/')[3]) if post.get('url', '').count('/') >= 3 else ''
     when = html.escape(post.get('published', ''))
-    link = html.escape(post.get('url', ''))
+    credit = html.escape(f"出典: {post.get('source') or author}（{post.get('url', '')}）")
     picture = f'<img src="{picture_url}" alt="">' if picture_url else ''
     return f'''<!doctype html><html><head><meta charset="utf-8"><style>
 body {{ margin: 0; width: 1280px; height: 720px; background: #f1f5f9; font-family: {FONT}; color: #0f172a; }}
@@ -42,7 +42,7 @@ body {{ margin: 0; width: 1280px; height: 720px; background: #f1f5f9; font-famil
 .meta {{ margin-top: auto; font-size: 20px; color: #64748b; }}
 </style></head><body><div class="card"><div class="media">{picture}</div><div class="body">
 <div class="author">{author}</div><p class="text">{text}</p>
-<div class="meta">{when}<br>{link}</div></div></div></body></html>'''
+<div class="meta">{credit}<br>{when}</div></div></div></body></html>'''
 
 
 def picture_data_url(path):
@@ -119,6 +119,7 @@ def record_card(media_dir, post, path):
     data = Path(path).read_bytes()
     manifest.setdefault('files', []).append({
         'file': Path(path).name, 'source_url': post.get('url'), 'media_url': None, 'kind': 'card',
+        'credit': f"出典: {post.get('source') or ''}（{post.get('url', '')}）",
         'content_type': 'image/png', 'bytes': len(data), 'sha256': hashlib.sha256(data).hexdigest(),
         'retrieved_at': datetime.now(timezone.utc).isoformat(timespec='seconds')})
     manifest_path.write_text(json.dumps(manifest, ensure_ascii=False, indent=2) + '\n', encoding='utf-8')

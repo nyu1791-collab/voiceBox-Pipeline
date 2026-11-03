@@ -79,6 +79,7 @@ def media_of(entry_or_item, html=''):
 
 def read_rss(feed, limit, get=fetch):
     parsed = feedparser.parse(get(feed['url']))
+    source = plain(parsed.feed.get('title', ''), 80) or feed['id']  # 出典の名前（媒体名）
     # Newest first, whatever order the feed uses; entries without a date keep their place at the end.
     entries = sorted(parsed.entries, key=lambda e: tuple(e.get('published_parsed') or e.get('updated_parsed') or ()),
                      reverse=True)
@@ -88,7 +89,7 @@ def read_rss(feed, limit, get=fetch):
         if not link.startswith('https://') and not link.startswith('http://'):
             continue
         html = (entry.get('summary') or '') + ' '.join(c.get('value', '') for c in entry.get('content', []) or [])
-        items.append({'feed': feed['id'], 'category': feed.get('category', ''),
+        items.append({'feed': feed['id'], 'category': feed.get('category', ''), 'source': source,
                       'title': plain(entry.get('title', ''), 200), 'url': link,
                       'published': entry.get('published', entry.get('updated', '')),
                       'summary': plain(entry.get('summary', '')), 'id': item_id(link, entry.get('id', '')),
@@ -131,7 +132,7 @@ def read_rsshub(feeds, limit, rsshub_dir):
         if result.get('error'):
             errors[feed['id']] = result['error'].get('message', '')[:300]
             continue
-        items[feed['id']] = [{'feed': feed['id'], 'category': feed.get('category', ''),
+        items[feed['id']] = [{'feed': feed['id'], 'category': feed.get('category', ''), 'source': feed['id'],
                               'title': plain(it.get('title', ''), 200), 'url': it.get('link', ''),
                               'published': str(it.get('pubDate', '')), 'summary': plain(it.get('description', '')),
                               'id': item_id(it.get('link', ''), str(it.get('guid', ''))),
@@ -203,7 +204,7 @@ def read_x_api(feed, limit, token, state, get=x_http):
         media = [x_media(media_by_key[key]) for key in (post.get('attachments') or {}).get('media_keys', [])
                  if key in media_by_key]
         url = f'https://x.com/{user}/status/{post["id"]}'
-        items.append({'feed': feed['id'], 'category': feed.get('category', ''),
+        items.append({'feed': feed['id'], 'category': feed.get('category', ''), 'source': f'@{user}（X公式）',
                       'title': plain(post.get('text', ''), 200),
                       'url': url, 'published': post.get('created_at', ''), 'summary': plain(post.get('text', '')),
                       'id': item_id(url), 'media': [m for m in media if m][:MEDIA_PER_ITEM]})

@@ -77,11 +77,6 @@
     {"id": "ign-japan", "type": "rss", "url": "https://jp.ign.com/feed.xml", "category": "ゲーム"},
     {"id": "inside-games", "type": "rss", "url": "https://www.inside-games.jp/rss/index.rdf", "category": "ゲーム"},
     {"id": "animeanime", "type": "rss", "url": "https://animeanime.jp/rss/index.rdf", "category": "アニメ・マンガ"},
-    {"id": "natalie-comic", "type": "rss", "url": "https://natalie.mu/comic/feed/news", "category": "アニメ・マンガ"},
-    {"id": "natalie-eiga", "type": "rss", "url": "https://natalie.mu/eiga/feed/news", "category": "エンタメ"},
-    {"id": "natalie-music", "type": "rss", "url": "https://natalie.mu/music/feed/news", "category": "エンタメ"},
-    {"id": "natalie-owarai", "type": "rss", "url": "https://natalie.mu/owarai/feed/news", "category": "エンタメ"},
-    {"id": "natalie-stage", "type": "rss", "url": "https://natalie.mu/stage/feed/news", "category": "エンタメ"},
     {"id": "yahoo-entertainment", "type": "rss", "url": "https://news.yahoo.co.jp/rss/topics/entertainment.xml", "category": "エンタメ"},
     {"id": "yt-comdot", "type": "rss", "url": "https://www.youtube.com/feeds/videos.xml?channel_id=UCRxPrFmRHsXGWfAyE6oqrPQ", "category": "著名人"},
     {"id": "yt-fischers", "type": "rss", "url": "https://www.youtube.com/feeds/videos.xml?channel_id=UCibEhpu5HP45-w7Bq1ZIulw", "category": "著名人"},
@@ -98,7 +93,6 @@
     {"id": "yahoo-sports", "type": "rss", "url": "https://news.yahoo.co.jp/rss/topics/sports.xml", "category": "スポーツ"},
     {"id": "jaxa", "type": "rss", "url": "https://www.jaxa.jp/rss/press_j.rdf", "category": "科学"},
     {"id": "karapaia", "type": "rss", "url": "https://karapaia.com/index.rdf", "category": "科学"},
-    {"id": "nasa", "type": "rss", "url": "https://www.nasa.gov/news-release/feed/", "category": "科学"},
     {"id": "nazology", "type": "rss", "url": "https://nazology.kusuguru.co.jp/feed", "category": "科学"},
     {"id": "sorae", "type": "rss", "url": "https://sorae.info/feed", "category": "科学"},
     {"id": "yahoo-science", "type": "rss", "url": "https://news.yahoo.co.jp/rss/topics/science.xml", "category": "科学"},
@@ -115,7 +109,6 @@
     {"id": "x-xai", "type": "x_api", "user": "xai", "category": "AI企業（X）"},
     {"id": "x-meta-ai", "type": "x_api", "user": "AIatMeta", "category": "AI企業（X）"},
     {"id": "x-reuters", "type": "x_api", "user": "Reuters", "category": "世界のニュース（X）"},
-    {"id": "x-bbc-world", "type": "x_api", "user": "BBCWorld", "category": "世界のニュース（X）"},
-    {"id": "x-nasa", "type": "x_api", "user": "NASA", "category": "世界のニュース（X）"}
+    {"id": "x-bbc-world", "type": "x_api", "user": "BBCWorld", "category": "世界のニュース（X）"}
   ]
 }
