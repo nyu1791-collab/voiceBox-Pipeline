@@ -119,6 +119,24 @@ class XApiTests(unittest.TestCase):
         feed_watch.read_x_api({'id': 'x', 'user': 'OpenAI'}, 5, 'tok', {}, get=self.fake_get(calls))
         self.assertIn('exclude=retweets%2Creplies', calls[1])
 
+    def test_quote_posts_carrying_other_users_text_are_left_out(self):
+        tweets = {'data': [
+            {'id': '300', 'text': '自社の発表', 'created_at': '2026-11-04T02:00:00.000Z', 'author_id': '42'},
+            {'id': '301', 'text': '他の人の投稿を引用', 'created_at': '2026-11-04T01:00:00.000Z', 'author_id': '42',
+             'referenced_tweets': [{'type': 'quoted', 'id': '999'}]},
+            {'id': '302', 'text': '返信', 'created_at': '2026-11-04T00:30:00.000Z', 'author_id': '42',
+             'referenced_tweets': [{'type': 'replied_to', 'id': '998'}]}], 'meta': {'newest_id': '302'}}
+        items = feed_watch.read_x_api({'id': 'x', 'user': 'OpenAI'}, 5, 'tok', {},
+                                      get=self.fake_get([], tweets=tweets))
+        self.assertEqual([it['url'] for it in items], ['https://x.com/OpenAI/status/300'])
+
+    def test_posts_by_someone_else_are_left_out(self):
+        tweets = {'data': [{'id': '400', 'text': 'x', 'created_at': '2026-11-04T02:00:00.000Z', 'author_id': '777'}],
+                  'meta': {'newest_id': '400'}}
+        items = feed_watch.read_x_api({'id': 'x', 'user': 'OpenAI'}, 5, 'tok', {},
+                                      get=self.fake_get([], tweets=tweets))
+        self.assertEqual(items, [])
+
     def test_invalid_user_names_are_refused(self):
         with self.assertRaises(ValueError):
             feed_watch.read_x_api({'id': 'x', 'user': '../../etc'}, 5, 'tok', {}, get=self.fake_get([]))

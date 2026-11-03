@@ -143,6 +143,7 @@ def read_rsshub(feeds, limit, rsshub_dir):
 
 
 X_API = 'https://api.x.com/2'
+X_OTHER_USERS_TYPES = ('quoted', 'replied_to', 'retweeted')  # 他の人の文章を含む投稿の種類
 X_USER = re.compile(r'^[A-Za-z0-9_]{1,15}$')
 
 
@@ -171,14 +172,16 @@ def x_media(media):
 
 def read_x_api(feed, limit, token, state, get=x_http):
     """Latest posts of one X account through the official API. Only posts newer than the last one read are
-    fetched (since_id), so a post is read and charged once. Retweets and replies are left out."""
+    fetched (since_id), so a post is read and charged once. Only the account's own posts are kept: retweets,
+    replies and quote posts (which carry other users' text) are left out."""
     user = feed['user'].lstrip('@')
     if not X_USER.match(user):
         raise ValueError(f'invalid X user name: {user}')
     user_ids = state.setdefault('x_user_ids', {})
     if user not in user_ids:
         user_ids[user] = get(f'{X_API}/users/by/username/{user}', token)['data']['id']
-    params = {'max_results': max(5, min(limit, 100)), 'exclude': 'retweets,replies', 'tweet.fields': 'created_at',
+    params = {'max_results': max(5, min(limit, 100)), 'exclude': 'retweets,replies',
+              'tweet.fields': 'created_at,referenced_tweets,author_id',
               'expansions': 'attachments.media_keys', 'media.fields': 'type,url,preview_image_url,variants'}
     since = state.setdefault('x_since_id', {}).get(user)
     if since:
@@ -190,6 +193,11 @@ def read_x_api(feed, limit, token, state, get=x_http):
     media_by_key = {m.get('media_key'): m for m in (data.get('includes') or {}).get('media', [])}
     items = []
     for post in data.get('data', []):
+        # 公式アカウント自身の投稿だけを読む。引用・返信・リポストは、ほかの人の文章を含むので除く。
+        if any(ref.get('type') in X_OTHER_USERS_TYPES for ref in post.get('referenced_tweets') or []):
+            continue
+        if post.get('author_id') and post['author_id'] != user_ids[user]:
+            continue
         media = [x_media(media_by_key[key]) for key in (post.get('attachments') or {}).get('media_keys', [])
                  if key in media_by_key]
         url = f'https://x.com/{user}/status/{post["id"]}'
